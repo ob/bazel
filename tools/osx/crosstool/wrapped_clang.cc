@@ -118,15 +118,24 @@ void RunSubProcess(const std::vector<std::string> &args) {
   }
 }
 
-// Splits txt using whitespace delimiter, pushing each substring into strs.
+// Splits txt on the first whitespace delimiter, pushing both substring into strs.
+// This is because the wrapped_clang binary is called with arguments like:
+//     wrapped_clang '-isysroot a/path/that might have/spaces' and we need to
+// preserve the path but split the flag and value.
 void SplitAndAdd(const std::string &txt, std::vector<std::string> &strs) {
-  for (std::istringstream stream(txt); !stream.eof();) {
-    std::string substring;
-    stream >> substring;
-    if (!substring.empty()) {
-      strs.push_back(substring);
-    }
+  if (txt[0] != '-') {
+    // not a flag, so no need to split anything.
+    strs.push_back(txt);
+    return;
   }
+  auto first_space = txt.find(' ');
+  auto first = txt.substr(0, first_space);
+    strs.push_back(first);
+  if (first_space == std::string::npos) {
+    return;
+  }
+  auto second = txt.substr(first_space+1, std::string::npos);
+  strs.push_back(second);
 }
 
 // Finds and replaces all instances of oldsub with newsub, in-place on str.
