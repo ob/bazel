@@ -11,6 +11,9 @@ java_binary(
         "//src/main/java/com/google/devtools/build/lib:events",
         "//src/main/java/com/google/devtools/build/lib:packages-internal",
     ],
+    jvm_flags = [
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+    ],
 )
 
 filegroup(

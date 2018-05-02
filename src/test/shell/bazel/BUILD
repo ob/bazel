@@ -40,7 +40,6 @@ filegroup(
         "//third_party/ijar",
         "//third_party/java/jdk/langtools:test-srcs",
         "//tools:srcs",
-        "@local_jdk//:bootclasspath",
         "@local_jdk//:jdk",
     ] + select({
         # TODO(bazel-team): Once https://github.com/bazelbuild/bazel/issues/2241

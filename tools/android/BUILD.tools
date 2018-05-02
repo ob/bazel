@@ -96,37 +96,19 @@ java_binary(
     visibility = ["//visibility:private"],
 )
 
-gen_java_lang_extras_jar_cmd = """
-    for jar in $(locations @local_jdk//:bootclasspath); do
-      if [[ "$${jar}" == *"/rt.jar" ]]; then
-        $(location %s) \
-            --exclude_build_data \
-            --dont_change_compression \
-            --sources $${jar} \
-            --include_prefixes "java/lang/invoke/" \
-            --include_prefixes "java/lang/annotation/" \
-            --output $@
-        break
-      fi
-    done
-    """
-
-# javac needs this Jar to compile lambdas, method references, and type annotations.
-# These classes are not part of the android.jar.
 genrule(
     name = "gen_java_lang_extras_jar",
-    srcs = [
-        "@local_jdk//:bootclasspath"
-    ],
-    tools = select({
-        "//src/conditions:windows": [":singlejar_javabin"],
-        "//conditions:default": ["@bazel_tools//tools/jdk:singlejar"],
-    }),
+    srcs = ["DumpJavaLangExtras.java"],
     outs = ["java_lang_extras.jar"],
-    cmd = select({
-        "//src/conditions:windows": gen_java_lang_extras_jar_cmd % ":singlejar_javabin",
-        "//conditions:default": gen_java_lang_extras_jar_cmd % "@bazel_tools//tools/jdk:singlejar",
-    }),
+    cmd = """
+set -eu
+TMPDIR=$$(mktemp -d -t tmp.XXXXXXXX)
+$(JAVABASE)/bin/javac $< -d $$TMPDIR
+$(JAVA) -cp $$TMPDIR DumpJavaLangExtras $@
+rm -rf $$TMPDIR
+""",
+    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
+    tools = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
     visibility = ["//visibility:private"],
 )
 

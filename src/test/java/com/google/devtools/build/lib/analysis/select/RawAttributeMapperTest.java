@@ -66,10 +66,8 @@ public class RawAttributeMapperTest extends AbstractAttributeMapperTest {
       rawMapper.get("srcs", BuildType.LABEL_LIST);
       fail("Expected srcs lookup to fail since the returned type is a SelectorList and not a list");
     } catch (IllegalArgumentException e) {
-      assertThat(e)
-          .hasCauseThat()
-          .hasMessageThat()
-          .contains("SelectorList cannot be cast to java.util.List");
+      assertThat(e).hasCauseThat().hasMessageThat().contains("SelectorList cannot be cast");
+      assertThat(e).hasCauseThat().hasMessageThat().contains("java.util.List");
     }
   }
 
@@ -104,10 +102,8 @@ public class RawAttributeMapperTest extends AbstractAttributeMapperTest {
       });
       fail("Expected label visitation to fail since one attribute is configurable");
     } catch (IllegalArgumentException e) {
-      assertThat(e)
-          .hasCauseThat()
-          .hasMessageThat()
-          .contains("SelectorList cannot be cast to java.util.List");
+      assertThat(e).hasCauseThat().hasMessageThat().contains("SelectorList cannot be cast");
+      assertThat(e).hasCauseThat().hasMessageThat().contains("java.util.List");
     }
   }
 
