@@ -118,24 +118,46 @@ void RunSubProcess(const std::vector<std::string> &args) {
   }
 }
 
-// Splits txt on the first whitespace delimiter, pushing both substring into strs.
+// Splits txt on the whitespace delimiters, trying to guess what's a flag
+// and what's an argument.
 // This is because the wrapped_clang binary is called with arguments like:
 //     wrapped_clang '-isysroot a/path/that might have/spaces' and we need to
 // preserve the path but split the flag and value.
+//
+// Unfortunately, sometimes we get stuff like:
+//     wrapped_clang '-Xlinker -add_ast_path -Xlinker a/path'
+// and it's all quoted. So this function splits out flags and keeps arguments
+// intact. Of course it'll fail in something like
+//     wrapped_clang '-isysroot a/path - separated - by dashes/'
+// but who does that?
 void SplitAndAdd(const std::string &txt, std::vector<std::string> &strs) {
   if (txt[0] != '-') {
     // not a flag, so no need to split anything.
     strs.push_back(txt);
     return;
   }
-  auto first_space = txt.find(' ');
-  auto first = txt.substr(0, first_space);
-    strs.push_back(first);
-  if (first_space == std::string::npos) {
-    return;
+  std::istringstream stream(txt);
+  std::string argument;
+  while (!stream.eof()) {
+    std::string substring;
+    stream >> substring;
+    if (!substring.empty()) {
+      if (substring[0] == '-') {
+        // a flag, just push it
+        if (!argument.empty()) {
+          strs.push_back(argument);
+          argument.clear();
+        }
+        strs.push_back(substring);
+      } else {
+        // part of previous so combine
+        argument += (argument.empty() ? "" : " ") + substring;
+      }
+    }
   }
-  auto second = txt.substr(first_space+1, std::string::npos);
-  strs.push_back(second);
+  if (!argument.empty()) {
+    strs.push_back(argument);
+  }
 }
 
 // Finds and replaces all instances of oldsub with newsub, in-place on str.
