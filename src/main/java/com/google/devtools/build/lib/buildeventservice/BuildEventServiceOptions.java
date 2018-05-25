@@ -52,12 +52,12 @@ public class BuildEventServiceOptions extends OptionsBase {
 
   @Option(
     name = "bes_best_effort",
-    defaultValue = "true",
+    defaultValue = "false",
     documentationCategory = OptionDocumentationCategory.LOGGING,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help =
         "Specifies whether a failure to upload the BES protocol should also result in a build "
-            + "failure. If 'false', bazel exits with ExitCode.PUBLISH_ERROR. (defaults to 'true')."
+            + "failure. If 'false', bazel exits with ExitCode.PUBLISH_ERROR. (defaults to 'false')."
   )
   public boolean besBestEffort;
 
@@ -104,4 +104,15 @@ public class BuildEventServiceOptions extends OptionsBase {
             + "event, even if larger than the specified value."
   )
   public long besOuterrBufferSize;
+
+  @Option(
+      name = "bes_results_url",
+      defaultValue = "",
+      documentationCategory = OptionDocumentationCategory.LOGGING,
+      effectTags = {OptionEffectTag.TERMINAL_OUTPUT},
+      help =
+          "Specifies the base URL where a user can view the information streamed to the BES"
+              + " backend. Bazel will output the URL appended by the invocation id to the"
+              + " terminal.")
+  public String besResultsUrl;
 }

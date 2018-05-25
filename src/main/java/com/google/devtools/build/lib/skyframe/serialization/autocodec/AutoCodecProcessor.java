@@ -21,10 +21,10 @@ import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.devtools.build.lib.skyframe.serialization.CodecScanningConstants;
 import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec;
 import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.Memoization;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationCodeGenerator.Marshaller;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.FieldSpec;
@@ -33,6 +33,7 @@ import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -102,13 +103,15 @@ public class AutoCodecProcessor extends AbstractProcessor {
       if (element instanceof TypeElement) {
         TypeElement encodedType = (TypeElement) element;
         TypeSpec.Builder codecClassBuilder;
-        boolean startMemoizing = annotation.memoization() == Memoization.START_MEMOIZING;
         switch (annotation.strategy()) {
           case INSTANTIATOR:
-            codecClassBuilder = buildClassWithInstantiatorStrategy(encodedType, startMemoizing);
+            codecClassBuilder = buildClassWithInstantiatorStrategy(encodedType);
             break;
           case PUBLIC_FIELDS:
-            codecClassBuilder = buildClassWithPublicFieldsStrategy(encodedType, startMemoizing);
+            codecClassBuilder = buildClassWithPublicFieldsStrategy(encodedType);
+            break;
+          case AUTO_VALUE_BUILDER:
+            codecClassBuilder = buildClassWithAutoValueBuilderStrategy(encodedType);
             break;
           default:
             throw new IllegalArgumentException("Unknown strategy: " + annotation.strategy());
@@ -168,8 +171,7 @@ public class AutoCodecProcessor extends AbstractProcessor {
         .build();
   }
 
-  private TypeSpec.Builder buildClassWithInstantiatorStrategy(
-      TypeElement encodedType, boolean startMemoizing) {
+  private TypeSpec.Builder buildClassWithInstantiatorStrategy(TypeElement encodedType) {
     ExecutableElement constructor = selectInstantiator(encodedType);
     List<? extends VariableElement> fields = constructor.getParameters();
 
@@ -178,17 +180,44 @@ public class AutoCodecProcessor extends AbstractProcessor {
 
     if (encodedType.getAnnotation(AutoValue.class) == null) {
       initializeUnsafeOffsets(codecClassBuilder, encodedType, fields);
-      codecClassBuilder.addMethod(
-          buildSerializeMethodWithInstantiator(encodedType, fields, startMemoizing));
+      codecClassBuilder.addMethod(buildSerializeMethodWithInstantiator(encodedType, fields));
     } else {
       codecClassBuilder.addMethod(
-          buildSerializeMethodWithInstantiatorForAutoValue(encodedType, fields, startMemoizing));
+          buildSerializeMethodWithInstantiatorForAutoValue(encodedType, fields));
     }
 
     MethodSpec.Builder deserializeBuilder =
-        AutoCodecUtil.initializeDeserializeMethodBuilder(encodedType, startMemoizing, env);
+        AutoCodecUtil.initializeDeserializeMethodBuilder(encodedType, env);
     buildDeserializeBody(deserializeBuilder, fields);
-    addReturnNew(deserializeBuilder, encodedType, constructor, startMemoizing, env);
+    addReturnNew(deserializeBuilder, encodedType, constructor, /*builderVar=*/ null, env);
+    codecClassBuilder.addMethod(deserializeBuilder.build());
+
+    return codecClassBuilder;
+  }
+
+  private TypeSpec.Builder buildClassWithAutoValueBuilderStrategy(TypeElement encodedType) {
+    TypeElement builderType = findBuilderType(encodedType);
+    List<ExecutableElement> getters = findGettersFromType(encodedType, builderType);
+    ExecutableElement builderCreationMethod = findBuilderCreationMethod(encodedType, builderType);
+    ExecutableElement buildMethod = findBuildMethod(encodedType, builderType);
+    TypeSpec.Builder codecClassBuilder =
+        AutoCodecUtil.initializeCodecClassBuilder(encodedType, env);
+    MethodSpec.Builder serializeBuilder =
+        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, env);
+    for (ExecutableElement getter : getters) {
+      marshallers.writeSerializationCode(
+          new Marshaller.Context(
+              serializeBuilder,
+              getter.getReturnType(),
+              turnGetterIntoExpression(getter.getSimpleName().toString())));
+    }
+    codecClassBuilder.addMethod(serializeBuilder.build());
+    MethodSpec.Builder deserializeBuilder =
+        AutoCodecUtil.initializeDeserializeMethodBuilder(encodedType, env);
+    String builderVarName =
+        buildDeserializeBodyWithBuilder(
+            encodedType, builderType, deserializeBuilder, getters, builderCreationMethod);
+    addReturnNew(deserializeBuilder, encodedType, buildMethod, builderVarName, env);
     codecClassBuilder.addMethod(deserializeBuilder.build());
 
     return codecClassBuilder;
@@ -226,6 +255,200 @@ public class AutoCodecProcessor extends AbstractProcessor {
 
   private static boolean hasInstantiatorAnnotation(Element elt) {
     return elt.getAnnotation(AutoCodec.Instantiator.class) != null;
+  }
+
+  private TypeElement findBuilderType(TypeElement encodedType) {
+    TypeElement builderType = null;
+    for (Element element : encodedType.getEnclosedElements()) {
+      if (element instanceof TypeElement
+          && element.getModifiers().contains(Modifier.STATIC)
+          && element.getAnnotation(AutoValue.Builder.class) != null) {
+        if (builderType != null) {
+          throw new IllegalArgumentException(
+              "Type "
+                  + encodedType
+                  + " had multiple inner classes annotated as @AutoValue.Builder: "
+                  + builderType
+                  + " and "
+                  + element);
+        }
+        builderType = (TypeElement) element;
+      }
+    }
+    if (builderType == null) {
+      throw new IllegalArgumentException(
+          "Couldn't find @AutoValue.Builder-annotated static class inside " + encodedType);
+    }
+    return builderType;
+  }
+
+  private List<ExecutableElement> findGettersFromType(
+      TypeElement encodedType, TypeElement builderTypeForFiltering) {
+    List<ExecutableElement> result = new ArrayList<>();
+    for (ExecutableElement method :
+        ElementFilter.methodsIn(env.getElementUtils().getAllMembers(encodedType))) {
+      if (!method.getModifiers().contains(Modifier.STATIC)
+          && method.getModifiers().contains(Modifier.ABSTRACT)
+          && method.getParameters().isEmpty()
+          && method.getReturnType().getKind() != TypeKind.VOID
+          && (!method.getReturnType().getKind().equals(TypeKind.DECLARED)
+              || !builderTypeForFiltering.equals(
+                  env.getTypeUtils().asElement(method.getReturnType())))) {
+        result.add(method);
+      }
+    }
+    if (result.isEmpty()) {
+      throw new IllegalArgumentException("Couldn't find any properties for " + encodedType);
+    }
+    return result;
+  }
+
+  private String getNameFromGetter(ExecutableElement method) {
+    String name = method.getSimpleName().toString();
+    if (name.startsWith("get")) {
+      return name.substring(3, 4).toLowerCase() + name.substring(4);
+    } else if (name.startsWith("is")) {
+      return name.substring(2, 3).toLowerCase() + name.substring(3);
+    } else {
+      return name;
+    }
+  }
+
+  private ExecutableElement findBuilderCreationMethod(
+      TypeElement encodedType, TypeElement builderType) {
+    ExecutableElement builderMethod = null;
+    for (ExecutableElement method :
+        ElementFilter.methodsIn(env.getElementUtils().getAllMembers(encodedType))) {
+      if (method.getModifiers().contains(Modifier.STATIC)
+          && !method.getModifiers().contains(Modifier.ABSTRACT)
+          && method.getParameters().isEmpty()
+          && method.getReturnType().equals(builderType.asType())) {
+        if (builderMethod != null) {
+          throw new IllegalArgumentException(
+              "Type "
+                  + encodedType
+                  + " had multiple static methods to create an element of type "
+                  + builderType
+                  + ": "
+                  + builderMethod
+                  + " and "
+                  + method);
+        }
+        builderMethod = method;
+      }
+    }
+    if (builderMethod == null) {
+      throw new IllegalArgumentException(
+          "Couldn't find builder creation method for " + encodedType + " and " + builderType);
+    }
+    return builderMethod;
+  }
+
+  private ExecutableElement findBuildMethod(TypeElement encodedType, TypeElement builderType) {
+    ExecutableElement abstractBuildMethod = null;
+    for (ExecutableElement method :
+        ElementFilter.methodsIn(env.getElementUtils().getAllMembers(builderType))) {
+      if (method.getModifiers().contains(Modifier.STATIC)) {
+        continue;
+      }
+      if (method.getParameters().isEmpty()
+          && method.getReturnType().equals(encodedType.asType())
+          && method.getModifiers().contains(Modifier.ABSTRACT)) {
+          if (abstractBuildMethod != null) {
+            throw new IllegalArgumentException(
+                "Type "
+                    + builderType
+                    + " had multiple abstract methods to create an element of type "
+                    + encodedType
+                    + ": "
+                    + abstractBuildMethod
+                    + " and "
+                    + method);
+          }
+          abstractBuildMethod = method;
+      }
+    }
+    if (abstractBuildMethod == null) {
+      throw new IllegalArgumentException(
+          "Couldn't find build method for " + encodedType + " and " + builderType);
+    }
+    return abstractBuildMethod;
+  }
+
+  private String buildDeserializeBodyWithBuilder(
+      TypeElement encodedType,
+      TypeElement builderType,
+      MethodSpec.Builder builder,
+      List<ExecutableElement> fields,
+      ExecutableElement builderCreationMethod) {
+    String builderVarName = "objectBuilder";
+    builder.addStatement(
+        "$T $L = $T.$L()",
+        builderCreationMethod.getReturnType(),
+        builderVarName,
+        encodedType,
+        builderCreationMethod.getSimpleName());
+    for (ExecutableElement getter : fields) {
+      String paramName = getNameFromGetter(getter) + "_";
+      marshallers.writeDeserializationCode(
+          new Marshaller.Context(builder, getter.getReturnType(), paramName));
+      setValueInBuilder(builderType, getter, paramName, builderVarName, builder);
+    }
+    return builderVarName;
+  }
+
+  private void setValueInBuilder(
+      TypeElement builderType,
+      ExecutableElement getter,
+      String paramName,
+      String builderVarName,
+      MethodSpec.Builder methodBuilder) {
+    ExecutableElement setterMethod = findSetterGivenGetter(getter, builderType);
+    methodBuilder.addStatement(
+        "$L.$L($L)", builderVarName, setterMethod.getSimpleName(), paramName);
+  }
+
+  private ExecutableElement findSetterGivenGetter(
+      ExecutableElement getter, TypeElement builderType) {
+    List<ExecutableElement> methods =
+        ElementFilter.methodsIn(env.getElementUtils().getAllMembers(builderType));
+    String varName = getNameFromGetter(getter);
+    TypeMirror type = getter.getReturnType();
+    ImmutableSet<String> setterNames = ImmutableSet.of(varName, addCamelCasePrefix(varName, "set"));
+
+    ExecutableElement setterMethod = null;
+    for (ExecutableElement method : methods) {
+      if (!method.getModifiers().contains(Modifier.STATIC)
+          && !method.getModifiers().contains(Modifier.PRIVATE)
+          && setterNames.contains(method.getSimpleName().toString())
+          && method.getReturnType().equals(builderType.asType())
+          && method.getParameters().size() == 1
+          && env.getTypeUtils()
+              .isSubtype(type, Iterables.getOnlyElement(method.getParameters()).asType())) {
+        if (setterMethod != null) {
+          throw new IllegalArgumentException(
+              "Multiple setter methods for "
+                  + getter
+                  + " found in "
+                  + builderType
+                  + ": "
+                  + setterMethod
+                  + " and "
+                  + method);
+        }
+        setterMethod = method;
+      }
+    }
+    if (setterMethod != null) {
+      return setterMethod;
+    }
+
+    throw new IllegalArgumentException(
+        builderType
+            + ": No setter found corresponding to getter "
+            + getter.getSimpleName()
+            + ", "
+            + type);
   }
 
   private enum Relation {
@@ -291,9 +514,9 @@ public class AutoCodecProcessor extends AbstractProcessor {
   }
 
   private MethodSpec buildSerializeMethodWithInstantiator(
-      TypeElement encodedType, List<? extends VariableElement> fields, boolean startMemoizing) {
+      TypeElement encodedType, List<? extends VariableElement> fields) {
     MethodSpec.Builder serializeBuilder =
-        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, startMemoizing, env);
+        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, env);
     for (VariableElement parameter : fields) {
       Optional<FieldValueAndClass> hasField =
           getFieldByNameRecursive(encodedType, parameter.getSimpleName().toString());
@@ -346,8 +569,8 @@ public class AutoCodecProcessor extends AbstractProcessor {
     List<ExecutableElement> methods =
         ElementFilter.methodsIn(env.getElementUtils().getAllMembers(type));
 
-    ImmutableList.Builder<String> possibleGetterNamesBuilder =
-        ImmutableList.<String>builder().add(parameter.getSimpleName().toString());
+    ImmutableSet.Builder<String> possibleGetterNamesBuilder =
+        ImmutableSet.<String>builder().add(parameter.getSimpleName().toString());
 
     if (parameter.asType().getKind() == TypeKind.BOOLEAN) {
       possibleGetterNamesBuilder.add(
@@ -356,7 +579,7 @@ public class AutoCodecProcessor extends AbstractProcessor {
       possibleGetterNamesBuilder.add(
           addCamelCasePrefix(parameter.getSimpleName().toString(), "get"));
     }
-    ImmutableList<String> possibleGetterNames = possibleGetterNamesBuilder.build();
+    ImmutableSet<String> possibleGetterNames = possibleGetterNamesBuilder.build();
 
     for (ExecutableElement element : methods) {
       if (!element.getModifiers().contains(Modifier.STATIC)
@@ -386,23 +609,26 @@ public class AutoCodecProcessor extends AbstractProcessor {
 
   private void addSerializeParameterWithGetter(
       TypeElement encodedType, VariableElement parameter, MethodSpec.Builder serializeBuilder) {
-    String getter = "input." + findGetterForClass(parameter, encodedType) + "()";
+    String getter = turnGetterIntoExpression(findGetterForClass(parameter, encodedType));
     marshallers.writeSerializationCode(
         new Marshaller.Context(serializeBuilder, parameter.asType(), getter));
   }
 
+  private static String turnGetterIntoExpression(String getterName) {
+    return "input." + getterName + "()";
+  }
+
   private MethodSpec buildSerializeMethodWithInstantiatorForAutoValue(
-      TypeElement encodedType, List<? extends VariableElement> fields, boolean startMemoizing) {
+      TypeElement encodedType, List<? extends VariableElement> fields) {
     MethodSpec.Builder serializeBuilder =
-        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, startMemoizing, env);
+        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, env);
     for (VariableElement parameter : fields) {
       addSerializeParameterWithGetter(encodedType, parameter, serializeBuilder);
     }
     return serializeBuilder.build();
   }
 
-  private TypeSpec.Builder buildClassWithPublicFieldsStrategy(
-      TypeElement encodedType, boolean startMemoizing) {
+  private TypeSpec.Builder buildClassWithPublicFieldsStrategy(TypeElement encodedType) {
     TypeSpec.Builder codecClassBuilder =
         AutoCodecUtil.initializeCodecClassBuilder(encodedType, env);
     ImmutableList<? extends VariableElement> publicFields =
@@ -410,10 +636,9 @@ public class AutoCodecProcessor extends AbstractProcessor {
             .stream()
             .filter(this::isPublicField)
             .collect(toImmutableList());
-    codecClassBuilder.addMethod(
-        buildSerializeMethodWithPublicFields(encodedType, publicFields, startMemoizing));
+    codecClassBuilder.addMethod(buildSerializeMethodWithPublicFields(encodedType, publicFields));
     MethodSpec.Builder deserializeBuilder =
-        AutoCodecUtil.initializeDeserializeMethodBuilder(encodedType, startMemoizing, env);
+        AutoCodecUtil.initializeDeserializeMethodBuilder(encodedType, env);
     buildDeserializeBody(deserializeBuilder, publicFields);
     addInstantiatePopulateFieldsAndReturn(deserializeBuilder, encodedType, publicFields);
     codecClassBuilder.addMethod(deserializeBuilder.build());
@@ -429,9 +654,9 @@ public class AutoCodecProcessor extends AbstractProcessor {
   }
 
   private MethodSpec buildSerializeMethodWithPublicFields(
-      TypeElement encodedType, List<? extends VariableElement> fields, boolean startMemoizing) {
+      TypeElement encodedType, List<? extends VariableElement> fields) {
     MethodSpec.Builder serializeBuilder =
-        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, startMemoizing, env);
+        AutoCodecUtil.initializeSerializeMethodBuilder(encodedType, env);
     for (VariableElement parameter : fields) {
       String paramAccessor = "input." + parameter.getSimpleName();
       marshallers.writeSerializationCode(
@@ -465,13 +690,8 @@ public class AutoCodecProcessor extends AbstractProcessor {
       MethodSpec.Builder builder,
       TypeElement type,
       ExecutableElement instantiator,
-      boolean startMemoizing,
+      Object builderVar,
       ProcessingEnvironment env) {
-    // TODO(janakr): When injection of additional data and memoizing are separated, rework this so
-    // that mutability isn't deeply embedded in AutoCodec.
-    if (startMemoizing) {
-      builder.addStatement("$L.close()", AutoCodecUtil.MUTABILITY_VARIABLE_NAME);
-    }
     List<? extends TypeMirror> allThrown = instantiator.getThrownTypes();
     if (!allThrown.isEmpty()) {
       builder.beginControlFlow("try");
@@ -485,8 +705,11 @@ public class AutoCodecProcessor extends AbstractProcessor {
             .collect(Collectors.joining(", "));
     if (instantiator.getKind().equals(ElementKind.CONSTRUCTOR)) {
       builder.addStatement("return new $T($L)", typeName, parameters);
-    } else { // Otherwise, it's a factory method.
+    } else if (builderVar == null) { // Otherwise, it's a factory method.
       builder.addStatement("return $T.$L($L)", typeName, instantiator.getSimpleName(), parameters);
+    } else {
+      builder.addStatement(
+          "return $L.$L($L)", builderVar, instantiator.getSimpleName(), parameters);
     }
     if (!allThrown.isEmpty()) {
       for (TypeMirror thrown : allThrown) {

@@ -20,7 +20,6 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.rules.cpp.CcCompilationInfo.Builder;
 import com.google.devtools.build.lib.rules.cpp.CppConfiguration.HeadersCheckingMode;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 
@@ -39,7 +38,8 @@ public final class MockCppSemantics implements CppSemantics {
       RuleContext ruleContext, CppCompileActionBuilder actionBuilder) {}
 
   @Override
-  public void setupCcCompilationInfo(RuleContext ruleContext, Builder ccCompilationInfoBuilder) {}
+  public void setupCcCompilationContext(
+      RuleContext ruleContext, CcCompilationContext.Builder ccCompilationContextBuilder) {}
 
   @Override
   public NestedSet<Artifact> getAdditionalPrunableIncludes() {

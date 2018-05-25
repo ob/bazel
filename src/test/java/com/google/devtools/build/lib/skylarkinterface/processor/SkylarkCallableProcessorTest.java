@@ -61,7 +61,51 @@ public final class SkylarkCallableProcessorTest {
         .processedWith(new SkylarkCallableProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "@SkylarkCallable annotated methods with structField=true must have zero arguments.");
+            "@SkylarkCallable annotated methods with structField=true must have 0 user-supplied "
+                + "parameters. Expected 0 extra interpreter parameters, "
+                + "but found 1 total parameters.");
+  }
+
+  @Test
+  public void testStructFieldWithInvalidInfo() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("StructFieldWithInvalidInfo.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable-annotated methods with structField=true may not also specify "
+                + "useAst, useEnvironment, useLocation, extraPositionals, or extraKeywords");
+  }
+
+  @Test
+  public void testStructFieldWithExtraArgs() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("StructFieldWithExtraArgs.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable-annotated methods with structField=true may not also specify "
+                + "useAst, useEnvironment, useLocation, extraPositionals, or extraKeywords");
+  }
+
+  @Test
+  public void testStructFieldWithExtraKeywords() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("StructFieldWithExtraKeywords.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable-annotated methods with structField=true may not also specify "
+                + "useAst, useEnvironment, useLocation, extraPositionals, or extraKeywords");
+  }
+
+  @Test
+  public void testDocumentationMissing() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("DocumentationMissing.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining("The 'doc' string must be non-empty if 'documented' is true.");
   }
 
   @Test
@@ -101,15 +145,28 @@ public final class SkylarkCallableProcessorTest {
   }
 
   @Test
-  public void testSkylarkInfoWrongOrder() throws Exception {
+  public void testSkylarkInfoBeforeParams() throws Exception {
     assertAbout(javaSource())
-        .that(getFile("SkylarkInfoWrongOrder.java"))
+        .that(getFile("SkylarkInfoBeforeParams.java"))
         .processedWith(new SkylarkCallableProcessor())
         .failsToCompile()
         .withErrorContaining(
             "Expected parameter index 3 to be the "
                 + Location.class.getCanonicalName()
                 + " type, matching useLocation, but was java.lang.Integer");
+  }
+
+  @Test
+  public void testSkylarkInfoParamsWrongOrder() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("SkylarkInfoParamsWrongOrder.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Expected parameter index 1 to be the "
+                + Location.class.getCanonicalName()
+                + " type, matching useLocation, but was "
+                + Environment.class.getCanonicalName());
   }
 
   @Test
@@ -122,5 +179,120 @@ public final class SkylarkCallableProcessorTest {
             "@SkylarkCallable annotated method has 2 parameters, "
                 + "but annotation declared 1 user-supplied parameters "
                 + "and 0 extra interpreter parameters.");
+  }
+
+  @Test
+  public void testInvalidParamNoneDefault() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("InvalidParamNoneDefault.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Parameter 'a_parameter' has 'None' default value but is not noneable.");
+  }
+
+  @Test
+  public void testParamTypeConflict() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("ParamTypeConflict.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Parameter 'a_parameter' has both 'type' and 'allowedTypes' specified."
+                + " Only one may be specified.");
+  }
+
+  @Test
+  public void testParamNeitherNamedNorPositional() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("ParamNeitherNamedNorPositional.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Parameter 'a_parameter' must be either positional or named");
+  }
+
+  @Test
+  public void testNonDefaultParamAfterDefault() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("NonDefaultParamAfterDefault.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Positional parameter 'two' has no default value but is specified "
+                + "after one or more positional parameters with default values");
+  }
+
+  @Test
+  public void testPositionalParamAfterNonPositional() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("PositionalParamAfterNonPositional.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Positional parameter 'two' is specified after one or more non-positonal parameters");
+  }
+
+  @Test
+  public void testPositionalOnlyParamAfterNamed() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("PositionalOnlyParamAfterNamed.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Positional-only parameter 'two' is specified after one or more named parameters");
+  }
+
+  @Test
+  public void testExtraKeywordsOutOfOrder() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("ExtraKeywordsOutOfOrder.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Expected parameter index 1 to be the "
+                + "com.google.devtools.build.lib.syntax.SkylarkDict<?,?> type, matching "
+                + "extraKeywords, but was java.lang.String");
+  }
+
+  @Test
+  public void testExtraPositionalsMissing() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("ExtraPositionalsMissing.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable annotated method has 3 parameters, but annotation declared "
+                + "1 user-supplied parameters and 3 extra interpreter parameters.");
+  }
+
+  @Test
+  public void testSelfCallWithNoName() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("SelfCallWithNoName.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable-annotated methods with selfCall=true must have a name");
+  }
+
+  @Test
+  public void testSelfCallWithStructField() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("SelfCallWithStructField.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "@SkylarkCallable-annotated methods with selfCall=true must have structField=false");
+  }
+
+  @Test
+  public void testMultipleSelfCallMethods() throws Exception {
+    assertAbout(javaSource())
+        .that(getFile("MultipleSelfCallMethods.java"))
+        .processedWith(new SkylarkCallableProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Containing class has more than one selfCall method defined.");
   }
 }

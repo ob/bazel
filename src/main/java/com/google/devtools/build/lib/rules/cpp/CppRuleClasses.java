@@ -41,7 +41,6 @@ import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault;
 import com.google.devtools.build.lib.packages.ImplicitOutputsFunction.SafeImplicitOutputsFunction;
 import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.Builder;
 import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
 import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.rules.cpp.transitions.EnableLipoTransition;
@@ -86,6 +85,14 @@ public class CppRuleClasses {
   public static LabelLateBoundDefault<CppConfiguration> ccToolchainAttribute(
       RuleDefinitionEnvironment env) {
     return LabelLateBoundDefault.fromTargetConfiguration(
+        CppConfiguration.class,
+        env.getToolsLabel(CROSSTOOL_LABEL),
+        (rules, attributes, cppConfig) -> cppConfig.getCcToolchainRuleLabel());
+  }
+
+  public static LabelLateBoundDefault<CppConfiguration> ccHostToolchainAttribute(
+      RuleDefinitionEnvironment env) {
+    return LabelLateBoundDefault.fromHostConfiguration(
         CppConfiguration.class,
         env.getToolsLabel(CROSSTOOL_LABEL),
         (rules, attributes, cppConfig) -> cppConfig.getCcToolchainRuleLabel());
@@ -280,12 +287,17 @@ public class CppRuleClasses {
   /*
    * A string constant for allowing implicit ThinLTO enablement for AFDO.
    */
-  public static final java.lang.String AUTOFDO_IMPLICIT_THINLTO = "autofdo_implicit_thinlto";
+  public static final String AUTOFDO_IMPLICIT_THINLTO = "autofdo_implicit_thinlto";
 
   /*
    * A string constant for enabling ThinLTO for AFDO implicitly.
    */
-  public static final java.lang.String ENABLE_AFDO_THINLTO = "enable_afdo_thinlto";
+  public static final String ENABLE_AFDO_THINLTO = "enable_afdo_thinlto";
+
+  /*
+   * A string constant for enabling ThinLTO for FDO implicitly.
+   */
+  public static final String ENABLE_FDO_THINLTO = "enable_fdo_thinlto";
 
   /**
    * A string constant for allowing use of shared LTO backend actions for linkstatic tests building
@@ -293,6 +305,13 @@ public class CppRuleClasses {
    */
   public static final String THIN_LTO_LINKSTATIC_TESTS_USE_SHARED_NONLTO_BACKENDS =
       "thin_lto_linkstatic_tests_use_shared_nonlto_backends";
+
+  /**
+   * A string constant for allowing use of shared LTO backend actions for all linkstatic links
+   * building with ThinLTO.
+   */
+  public static final String THIN_LTO_ALL_LINKSTATIC_USE_SHARED_NONLTO_BACKENDS =
+      "thin_lto_all_linkstatic_use_shared_nonlto_backends";
 
   /**
    * A string constant for the PDB file generation feature, should only be used for toolchains
@@ -329,6 +348,9 @@ public class CppRuleClasses {
   /** A string constant for a feature to dynamically link MSVCRT with debug info on Windows. */
   public static final String DYNAMIC_LINK_MSVCRT_DEBUG = "dynamic_link_msvcrt_debug";
 
+  /** A string constant for a feature to statically link the C++ runtimes. */
+  public static final String STATIC_LINK_CPP_RUNTIMES = "static_link_cpp_runtimes";
+
   /**
    * A string constant for a feature that indicates we are using a toolchain building for Windows.
    */
@@ -353,6 +375,11 @@ public class CppRuleClasses {
    * A string constant for the fdo_optimize feature.
    */
   public static final String FDO_OPTIMIZE = "fdo_optimize";
+
+  /**
+   * A string constant for the cache prefetch hints feature.
+   */
+  public static final String FDO_PREFETCH_HINTS = "fdo_prefetch_hints";
 
   /**
    * A string constant for the autofdo feature.
@@ -381,7 +408,7 @@ public class CppRuleClasses {
   /** Ancestor for all rules that do include scanning. */
   public static final class CcIncludeScanningRule implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder
           .add(
               attr("$grep_includes", LABEL)

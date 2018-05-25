@@ -22,6 +22,7 @@ import com.google.devtools.build.lib.events.Location;
 import com.google.devtools.build.lib.packages.SkylarkInfo.Layout;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkPrinter;
+import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.FunctionSignature;
 import com.google.devtools.build.lib.syntax.SkylarkType;
 import java.util.Map;
@@ -44,8 +45,7 @@ import javax.annotation.Nullable;
  * pre-exported provider directly. Exported providers use only their key for {@link #equals} and
  * {@link #hashCode}.
  */
-@AutoCodec
-public class SkylarkProvider extends Provider implements SkylarkExportable {
+public class SkylarkProvider extends ProviderFromFunction implements SkylarkExportable {
 
   private static final FunctionSignature.WithValues<Object, SkylarkType> SCHEMALESS_SIGNATURE =
       FunctionSignature.WithValues.create(FunctionSignature.KWARGS);
@@ -126,9 +126,7 @@ public class SkylarkProvider extends Provider implements SkylarkExportable {
    * <p>If {@code key} is null, the provider is unexported. If {@code fields} is null, the provider
    * is schemaless.
    */
-  @AutoCodec.Instantiator
-  @AutoCodec.VisibleForSerialization
-  SkylarkProvider(
+  private SkylarkProvider(
       @Nullable SkylarkKey key, @Nullable ImmutableList<String> fields, Location location) {
     // We override getName() in order to use the name that is assigned when export() is called.
     // Hence BaseFunction's constructor gets a null name.
@@ -150,7 +148,7 @@ public class SkylarkProvider extends Provider implements SkylarkExportable {
   }
 
   @Override
-  protected SkylarkInfo createInstanceFromSkylark(Object[] args, Location loc) {
+  protected SkylarkInfo createInstanceFromSkylark(Object[] args, Environment env, Location loc) {
     if (layout == null) {
       @SuppressWarnings("unchecked")
       Map<String, Object> kwargs = (Map<String, Object>) args[0];

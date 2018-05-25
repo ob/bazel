@@ -21,16 +21,20 @@ import static org.junit.Assert.fail;
 import com.google.common.collect.ImmutableList;
 import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
+import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.platform.ToolchainInfo;
 import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
 import com.google.devtools.build.lib.packages.util.MockCcSupport;
+import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
 import com.google.devtools.build.lib.rules.cpp.CppConfiguration.DynamicMode;
 import com.google.devtools.build.lib.testutil.TestConstants;
+import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig;
+import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig.CToolchain;
 import com.google.devtools.common.options.OptionsParsingException;
+import com.google.protobuf.TextFormat;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -107,7 +111,7 @@ public class CcToolchainTest extends BuildViewTestCase {
         (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.useInterfaceSharedObjects(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isFalse();
 
     useConfiguration("--interface_shared_objects");
@@ -115,7 +119,7 @@ public class CcToolchainTest extends BuildViewTestCase {
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.useInterfaceSharedObjects(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isFalse();
 
     getAnalysisMock()
@@ -131,7 +135,7 @@ public class CcToolchainTest extends BuildViewTestCase {
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.useInterfaceSharedObjects(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isTrue();
 
     useConfiguration("--nointerface_shared_objects");
@@ -139,7 +143,7 @@ public class CcToolchainTest extends BuildViewTestCase {
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.useInterfaceSharedObjects(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isFalse();
   }
 
@@ -177,101 +181,65 @@ public class CcToolchainTest extends BuildViewTestCase {
     CcToolchainProvider toolchainProvider =
         (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
 
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     // Mode-specific settings.
     useConfiguration("-c", "dbg", "--fission=dbg");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
+    assertThat(toolchainProvider.useFission()).isTrue();
 
     useConfiguration("-c", "dbg", "--fission=opt");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     useConfiguration("-c", "dbg", "--fission=opt,dbg");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
+    assertThat(toolchainProvider.useFission()).isTrue();
 
     useConfiguration("-c", "fastbuild", "--fission=opt,dbg");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     useConfiguration("-c", "fastbuild", "--fission=opt,dbg");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     // Universally enabled
     useConfiguration("-c", "dbg", "--fission=yes");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
+    assertThat(toolchainProvider.useFission()).isTrue();
 
     useConfiguration("-c", "opt", "--fission=yes");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
+    assertThat(toolchainProvider.useFission()).isTrue();
 
     useConfiguration("-c", "fastbuild", "--fission=yes");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
+    assertThat(toolchainProvider.useFission()).isTrue();
 
     // Universally disabled
     useConfiguration("-c", "dbg", "--fission=no");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     useConfiguration("-c", "opt", "--fission=no");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
 
     useConfiguration("-c", "fastbuild", "--fission=no");
     target = getConfiguredTarget("//a:b");
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.useFission(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    assertThat(toolchainProvider.useFission()).isFalse();
   }
 
   @Test
@@ -297,38 +265,19 @@ public class CcToolchainTest extends BuildViewTestCase {
         "    dynamic_runtime_libs = [':empty'],",
         "    static_runtime_libs = [':empty'])");
 
-    useConfiguration("--cpu=piii");
+    assertThat(usePicForBinariesWithConfiguration("--cpu=piii")).isFalse();
+    assertThat(usePicForBinariesWithConfiguration("--cpu=piii", "-c", "opt")).isFalse();
+    assertThat(usePicForBinariesWithConfiguration("--cpu=k8")).isTrue();
+    assertThat(usePicForBinariesWithConfiguration("--cpu=k8", "-c", "opt")).isFalse();
+  }
+
+  private boolean usePicForBinariesWithConfiguration(String... configuration) throws Exception {
+    useConfiguration(configuration);
     ConfiguredTarget target = getConfiguredTarget("//a:b");
     CcToolchainProvider toolchainProvider =
         (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.usePicForBinaries(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
-
-    useConfiguration("--cpu=piii", "-c", "opt");
-    target = getConfiguredTarget("//a:b");
-    toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.usePicForBinaries(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
-
-    useConfiguration("--cpu=k8");
-    target = getConfiguredTarget("//a:b");
-    toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.usePicForBinaries(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isTrue();
-
-    useConfiguration("--cpu=k8", "-c", "opt");
-    target = getConfiguredTarget("//a:b");
-    toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
-    assertThat(
-            CppHelper.usePicForBinaries(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
-        .isFalse();
+    RuleContext ruleContext = getRuleContext(target);
+    return CppHelper.usePicForBinaries(ruleContext, toolchainProvider);
   }
 
   @Test
@@ -392,7 +341,7 @@ public class CcToolchainTest extends BuildViewTestCase {
         (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.getDynamicMode(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isEqualTo(DynamicMode.OFF);
 
     useConfiguration("--lipo=off", "--lipo_context=//foo");
@@ -400,7 +349,7 @@ public class CcToolchainTest extends BuildViewTestCase {
     toolchainProvider = (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(
             CppHelper.getDynamicMode(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isEqualTo(DynamicMode.DEFAULT);
   }
 
@@ -435,7 +384,7 @@ public class CcToolchainTest extends BuildViewTestCase {
 
     assertThat(
             CppHelper.getDynamicMode(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isEqualTo(DynamicMode.DEFAULT);
 
     // Test "off"
@@ -445,7 +394,7 @@ public class CcToolchainTest extends BuildViewTestCase {
 
     assertThat(
             CppHelper.getDynamicMode(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isEqualTo(DynamicMode.OFF);
 
     // Test "fully"
@@ -455,7 +404,7 @@ public class CcToolchainTest extends BuildViewTestCase {
 
     assertThat(
             CppHelper.getDynamicMode(
-                target.getConfiguration().getFragment(CppConfiguration.class), toolchainProvider))
+                getConfiguration(target).getFragment(CppConfiguration.class), toolchainProvider))
         .isEqualTo(DynamicMode.FULLY);
 
     // Check an invalid value for disable_dynamic.
@@ -527,85 +476,28 @@ public class CcToolchainTest extends BuildViewTestCase {
         CppHelper.getToolchainUsingDefaultCcToolchainAttribute(getRuleContext(lib));
 
     assertDoesNotContainSublist(
-        CppHelper.getCompilerOptions(
-            lib.getConfiguration().getFragment(CppConfiguration.class),
-            toolchain,
-            Collections.emptyList()),
+        toolchain.getLegacyCompileOptionsWithCopts(),
         "--param",
         "df-double-quote-threshold-factor=0");
   }
 
   @Test
-  public void testFeatures() throws Exception {
-    writeDummyCcToolchain();
-
-    String originalCrosstool = analysisMock.ccSupport().readCrosstoolFile();
-    getAnalysisMock()
-        .ccSupport()
-        .setupCrosstoolWithRelease(
-            mockToolsConfig, MockCcSupport.addOptionalDefaultCoptsToCrosstool(originalCrosstool));
-
-    scratch.file("lib/BUILD", "cc_library(", "   name = 'lib',", "   srcs = ['a.cc'],", ")");
-
-    useConfiguration();
-    ConfiguredTarget lib = getConfiguredTarget("//lib");
-    CcToolchainProvider toolchain =
-        CppHelper.getToolchainUsingDefaultCcToolchainAttribute(getRuleContext(lib));
-
-    String defaultSettingFalse = "crosstool_default_false";
-    List<String> copts =
-        CppHelper.getCompilerOptions(
-            lib.getConfiguration().getFragment(CppConfiguration.class),
-            toolchain,
-            Collections.emptyList());
-    assertThat(copts).doesNotContain("-DDEFAULT_FALSE");
-    copts =
-        CppHelper.getCompilerOptions(
-            lib.getConfiguration().getFragment(CppConfiguration.class),
-            toolchain,
-            ImmutableList.of(defaultSettingFalse));
-    assertThat(copts).contains("-DDEFAULT_FALSE");
-
-    useConfiguration("--copt", "-DCOPT");
-    lib = getConfiguredTarget("//lib");
-    toolchain = CppHelper.getToolchainUsingDefaultCcToolchainAttribute(getRuleContext(lib));
-
-    copts =
-        CppHelper.getCompilerOptions(
-            lib.getConfiguration().getFragment(CppConfiguration.class),
-            toolchain,
-            ImmutableList.of(defaultSettingFalse));
-    assertThat(copts).contains("-DDEFAULT_FALSE");
-    assertThat(copts).contains("-DCOPT");
-    assertThat(copts.indexOf("-DDEFAULT_FALSE")).isLessThan(copts.indexOf("-DCOPT"));
-  }
-
-  @Test
   public void testMergesDefaultCoptsWithUserProvidedOnes() throws Exception {
     writeDummyCcToolchain();
-    scratch.file("lib/BUILD", "cc_library(", "   name = 'lib',", "   srcs = ['a.cc'],", ")");
+    scratch.file("lib/BUILD", "cc_library(name = 'lib', srcs = ['a.cc'])");
 
     ConfiguredTarget lib = getConfiguredTarget("//lib");
     CcToolchainProvider toolchain =
         CppHelper.getToolchainUsingDefaultCcToolchainAttribute(getRuleContext(lib));
 
     List<String> expected = new ArrayList<>();
-    expected.addAll(
-        CppHelper.getCompilerOptions(
-            lib.getConfiguration().getFragment(CppConfiguration.class),
-            toolchain,
-            Collections.emptyList()));
+    expected.addAll(toolchain.getLegacyCompileOptionsWithCopts());
     expected.add("-Dfoo");
 
     useConfiguration("--copt", "-Dfoo");
     lib = getConfiguredTarget("//lib");
     toolchain = CppHelper.getToolchainUsingDefaultCcToolchainAttribute(getRuleContext(lib));
-    assertThat(
-            ImmutableList.copyOf(
-                CppHelper.getCompilerOptions(
-                    lib.getConfiguration().getFragment(CppConfiguration.class),
-                    toolchain,
-                    Collections.emptyList())))
+    assertThat(ImmutableList.copyOf(toolchain.getLegacyCompileOptionsWithCopts()))
         .isEqualTo(ImmutableList.copyOf(expected));
   }
 
@@ -823,6 +715,26 @@ public class CcToolchainTest extends BuildViewTestCase {
   }
 
   @Test
+  public void testZipperInclusionDependsOnFdoOptimization() throws Exception {
+    reporter.removeHandler(failFastHandler);
+    writeDummyCcToolchain();
+    scratch.file("fdo/my_profile.afdo", "");
+    scratch.file(
+        "fdo/BUILD",
+        "exports_files(['my_profile.afdo'])",
+        "fdo_profile(name = 'fdo', profile = ':my_profile.profdata')");
+
+    useConfiguration();
+    assertThat(getPrerequisites(getConfiguredTarget("//a:b"), ":zipper")).isEmpty();
+
+    useConfiguration("-c", "opt", "--fdo_optimize=//fdo:my_profile.afdo");
+    assertThat(getPrerequisites(getConfiguredTarget("//a:b"), ":zipper")).isNotEmpty();
+
+    useConfiguration("-c", "opt", "--fdo_profile=//fdo:fdo");
+    assertThat(getPrerequisites(getConfiguredTarget("//a:b"), ":zipper")).isNotEmpty();
+  }
+
+  @Test
   public void testInlineCtoolchain_withoutToolchainResolution() throws Exception {
     scratch.file(
         "a/BUILD",
@@ -911,5 +823,180 @@ public class CcToolchainTest extends BuildViewTestCase {
     CcToolchainProvider toolchainProvider =
         (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
     assertThat(toolchainProvider.getAbi()).isEqualTo("banana");
+  }
+
+  @Test
+  public void testSupportsDynamicLinkerCheckFeatures() throws Exception {
+    writeDummyCcToolchain();
+
+    getAnalysisMock()
+        .ccSupport()
+        .setupCrosstool(mockToolsConfig, MockCcSupport.DYNAMIC_LINKING_MODE_FEATURE);
+
+    // To make sure the toolchain doesn't define linking_mode_flags { mode: DYNAMIC } as that would
+    // also result in supportsDynamicLinker returning true
+    useConfiguration("--compiler=compiler_no_dyn_linker");
+
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+
+    assertThat(toolchainProvider.supportsDynamicLinker()).isTrue();
+  }
+
+  // Tests CcCommon::enableStaticLinkCppRuntimesFeature when supports_embedded_runtimes is not
+  // present at all in the toolchain.
+  @Test
+  public void testStaticLinkCppRuntimesSetViaSupportsEmbeddedRuntimesUnset() throws Exception {
+    writeDummyCcToolchain();
+    getAnalysisMock().ccSupport().setupCrosstool(mockToolsConfig);
+    useConfiguration();
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+    FeatureConfiguration featureConfiguration =
+        CcCommon.configureFeaturesOrReportRuleError(getRuleContext(target), toolchainProvider);
+    assertThat(toolchainProvider.supportsEmbeddedRuntimes())
+        .isEqualTo(featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES));
+  }
+
+  // Tests CcCommon::enableStaticLinkCppRuntimesFeature when supports_embedded_runtimes is false
+  // in the toolchain.
+  @Test
+  public void testStaticLinkCppRuntimesSetViaSupportsEmbeddedRuntimesFalse() throws Exception {
+    writeDummyCcToolchain();
+    getAnalysisMock().ccSupport().setupCrosstoolWithEmbeddedRuntimes(mockToolsConfig);
+    useConfiguration();
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+    FeatureConfiguration featureConfiguration =
+        CcCommon.configureFeaturesOrReportRuleError(getRuleContext(target), toolchainProvider);
+    assertThat(toolchainProvider.supportsEmbeddedRuntimes())
+        .isEqualTo(featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES));
+  }
+
+  private FeatureConfiguration configureFeaturesForStaticLinkCppRuntimesTest(
+      String partialToolchain, String configurationToUse) throws Exception {
+    writeDummyCcToolchain();
+    CToolchain.Builder toolchainBuilder = CToolchain.newBuilder();
+    TextFormat.merge(partialToolchain, toolchainBuilder);
+    getAnalysisMock()
+        .ccSupport()
+        .setupCrosstool(
+            mockToolsConfig,
+            /* addEmbeddedRuntimes= */ true,
+            /* addModuleMap= */ false,
+            /* staticRuntimesLabel= */ null,
+            /* dynamicRuntimesLabel= */ null,
+            toolchainBuilder.buildPartial());
+    useConfiguration(configurationToUse);
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+    return CcCommon.configureFeaturesOrReportRuleError(getRuleContext(target), toolchainProvider);
+  }
+
+  // Tests CcCommon::enableStaticLinkCppRuntimesFeature when supports_embedded_runtimes is true in
+  // the toolchain and the feature is not present at all.
+  @Test
+  public void testSupportsEmbeddedRuntimesNoFeatureAtAll() throws Exception {
+    FeatureConfiguration featureConfiguration =
+        configureFeaturesForStaticLinkCppRuntimesTest("supports_embedded_runtimes: true", "");
+    assertThat(featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES)).isTrue();
+  }
+
+  // Tests CcCommon::enableStaticLinkCppRuntimesFeature when supports_embedded_runtimes is true in
+  // the toolchain and the feature is enabled.
+  @Test
+  public void testSupportsEmbeddedRuntimesFeatureEnabled() throws Exception {
+    FeatureConfiguration featureConfiguration =
+        configureFeaturesForStaticLinkCppRuntimesTest(
+            "supports_embedded_runtimes: true", "--features=static_link_cpp_runtimes");
+    assertThat(featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES)).isTrue();
+  }
+
+  // Tests CcCommon::enableStaticLinkCppRuntimesFeature when supports_embedded_runtimes is true in
+  // the toolchain and the feature is disabled.
+  @Test
+  public void testStaticLinkCppRuntimesOverridesSupportsEmbeddedRuntimes() throws Exception {
+    FeatureConfiguration featureConfiguration =
+        configureFeaturesForStaticLinkCppRuntimesTest(
+            "supports_embedded_runtimes: true feature { name: 'static_link_cpp_runtimes' }",
+            "--features=-static_link_cpp_runtimes");
+    assertThat(featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES)).isFalse();
+  }
+
+  @Test
+  public void testSysroot_fromCrosstool() throws Exception {
+    scratch.file(
+        "a/BUILD",
+        "filegroup(",
+        "    name='empty')",
+        "cc_toolchain(",
+        "    name = 'b',",
+        "    cpu = 'banana',",
+        "    all_files = ':empty',",
+        "    ar_files = ':empty',",
+        "    as_files = ':empty',",
+        "    compiler_files = ':empty',",
+        "    dwp_files = ':empty',",
+        "    linker_files = ':empty',",
+        "    strip_files = ':empty',",
+        "    objcopy_files = ':empty',",
+        "    dynamic_runtime_libs = [':empty'],",
+        "    static_runtime_libs = [':empty'])");
+    scratch.file("libc1/BUILD", "filegroup(name = 'everything', srcs = ['header1.h'])");
+    scratch.file("libc1/header1.h", "#define FOO 1");
+
+    getAnalysisMock()
+        .ccSupport()
+        .setupCrosstool(
+            mockToolsConfig,
+            CrosstoolConfig.CToolchain.newBuilder().setDefaultGrteTop("//libc1").buildPartial());
+    useConfiguration();
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+
+    assertThat(toolchainProvider.getSysroot()).isEqualTo(PathFragment.create("libc1"));
+  }
+
+  @Test
+  public void testSysroot_fromCcToolchain() throws Exception {
+    scratch.file(
+        "a/BUILD",
+        "filegroup(",
+        "    name='empty')",
+        "cc_toolchain(",
+        "    name = 'b',",
+        "    cpu = 'banana',",
+        "    all_files = ':empty',",
+        "    ar_files = ':empty',",
+        "    as_files = ':empty',",
+        "    compiler_files = ':empty',",
+        "    dwp_files = ':empty',",
+        "    linker_files = ':empty',",
+        "    strip_files = ':empty',",
+        "    objcopy_files = ':empty',",
+        "    dynamic_runtime_libs = [':empty'],",
+        "    static_runtime_libs = [':empty'],",
+        "    libc_top = '//libc2:everything')");
+    scratch.file("libc1/BUILD", "filegroup(name = 'everything', srcs = ['header1.h'])");
+    scratch.file("libc1/header1.h", "#define FOO 1");
+    scratch.file("libc2/BUILD", "filegroup(name = 'everything', srcs = ['header2.h'])");
+    scratch.file("libc2/header2.h", "#define FOO 2");
+
+    getAnalysisMock()
+        .ccSupport()
+        .setupCrosstool(
+            mockToolsConfig,
+            CrosstoolConfig.CToolchain.newBuilder().setDefaultGrteTop("//libc1").buildPartial());
+    useConfiguration();
+    ConfiguredTarget target = getConfiguredTarget("//a:b");
+    CcToolchainProvider toolchainProvider =
+        (CcToolchainProvider) target.get(ToolchainInfo.PROVIDER);
+
+    assertThat(toolchainProvider.getSysroot()).isEqualTo(PathFragment.create("libc2"));
   }
 }

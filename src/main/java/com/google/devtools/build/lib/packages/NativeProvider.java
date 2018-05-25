@@ -13,16 +13,15 @@
 // limitations under the License.
 package com.google.devtools.build.lib.packages;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
 import com.google.devtools.build.lib.events.Location;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.VisibleForSerialization;
+import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.EvalException;
 import com.google.devtools.build.lib.syntax.FunctionSignature;
 import com.google.devtools.build.lib.syntax.SkylarkType;
 import com.google.devtools.build.lib.util.Pair;
-import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -39,15 +38,15 @@ import javax.annotation.Nullable;
  * </pre>
  *
  * To allow construction from Skylark and custom construction logic, override {@link
- * #createInstanceFromSkylark(Object[], Location)} (see {@link #STRUCT} for an example.
+ * ProviderFromFunction#createInstanceFromSkylark(Object[], Environment, Location)}.
+ *
+ * @deprecated use {@link BuiltinProvider} instead.
  */
 @Immutable
-public abstract class NativeProvider<V extends Info> extends Provider {
+@Deprecated
+public abstract class NativeProvider<V extends Info> extends ProviderFromFunction {
   private final NativeKey key;
   private final String errorMessageFormatForUnknownField;
-
-  /** "struct" function. */
-  public static final StructProvider STRUCT = new StructProvider();
 
   private final Class<V> valueClass;
 
@@ -65,42 +64,6 @@ public abstract class NativeProvider<V extends Info> extends Provider {
   @Deprecated
   public interface WithLegacySkylarkName {
     String getSkylarkName();
-  }
-
-  /**
-   * The provider for the built-in type {@code struct}.
-   *
-   * <p>Its singleton instance is {@link #STRUCT}.
-   */
-  public static final class StructProvider extends NativeProvider<Info> {
-    private StructProvider() {
-      super(Info.class, "struct");
-    }
-
-    @Override
-    protected Info createInstanceFromSkylark(Object[] args, Location loc) {
-      @SuppressWarnings("unchecked")
-      Map<String, Object> kwargs = (Map<String, Object>) args[0];
-      return SkylarkInfo.createSchemaless(this, kwargs, loc);
-    }
-
-    /**
-     * Creates a struct with the he given field values and message format for unknown fields.
-     *
-     * <p>The custom message is useful for objects that have fields but aren't exactly used as
-     * providers, such as the {@code native} object, and the struct fields of {@code ctx} like
-     * {@code ctx.attr}.
-     * */
-    public SkylarkInfo create(
-        Map<String, Object> values, String errorMessageFormatForUnknownField) {
-      return SkylarkInfo.createSchemalessWithCustomMessage(
-          this, values, errorMessageFormatForUnknownField);
-    }
-
-    /** Creates an empty struct with the given location. */
-    public SkylarkInfo createEmpty(Location loc) {
-      return SkylarkInfo.createSchemaless(this, ImmutableMap.of(), loc);
-    }
   }
 
   private static final FunctionSignature.WithValues<Object, SkylarkType> SIGNATURE =
@@ -165,7 +128,8 @@ public abstract class NativeProvider<V extends Info> extends Provider {
   }
 
   @Override
-  protected Info createInstanceFromSkylark(Object[] args, Location loc) throws EvalException {
+  protected Info createInstanceFromSkylark(Object[] args, Environment env, Location loc)
+      throws EvalException {
     throw new EvalException(
         loc, String.format("'%s' cannot be constructed from Skylark", getPrintableName()));
   }
@@ -177,9 +141,7 @@ public abstract class NativeProvider<V extends Info> extends Provider {
   @SuppressWarnings("unchecked")
   public static NativeKey getNativeKeyFromSerializedRepresentation(Pair<String, String> serialized)
       throws ClassNotFoundException {
-    Class<? extends NativeProvider<?>> aClass =
-        (Class<? extends NativeProvider<?>>)
-            Class.forName(serialized.second).asSubclass(NativeProvider.class);
+    Class<? extends Provider> aClass = Class.forName(serialized.second).asSubclass(Provider.class);
     return new NativeKey(serialized.first, aClass);
   }
 
@@ -190,12 +152,13 @@ public abstract class NativeProvider<V extends Info> extends Provider {
    */
   @AutoCodec
   @Immutable
+  // TODO(cparsons): Move this class, as NativeProvider is deprecated.
   public static final class NativeKey extends Key {
     private final String name;
-    private final Class<? extends NativeProvider<?>> aClass;
+    private final Class<? extends Provider> aClass;
 
     @VisibleForSerialization
-    NativeKey(String name, Class<? extends NativeProvider<?>> aClass) {
+    NativeKey(String name, Class<? extends Provider> aClass) {
       this.name = name;
       this.aClass = aClass;
     }

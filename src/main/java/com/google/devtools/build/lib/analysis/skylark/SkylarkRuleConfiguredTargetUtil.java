@@ -33,14 +33,18 @@ import com.google.devtools.build.lib.analysis.test.InstrumentedFilesProvider;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.events.Location;
+import com.google.devtools.build.lib.packages.AdvertisedProviderSet;
 import com.google.devtools.build.lib.packages.Info;
 import com.google.devtools.build.lib.packages.NativeProvider;
 import com.google.devtools.build.lib.packages.Rule;
 import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
+import com.google.devtools.build.lib.packages.SkylarkProviderIdentifier;
+import com.google.devtools.build.lib.packages.StructProvider;
 import com.google.devtools.build.lib.packages.TargetUtils;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkValue;
 import com.google.devtools.build.lib.syntax.BaseFunction;
 import com.google.devtools.build.lib.syntax.ClassObject;
+import com.google.devtools.build.lib.syntax.DebugServerUtils;
 import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.EvalException;
 import com.google.devtools.build.lib.syntax.EvalExceptionWithStackTrace;
@@ -73,7 +77,11 @@ public final class SkylarkRuleConfiguredTargetUtil {
 
   /** Create a Rule Configured Target from the ruleContext and the ruleImplementation. */
   public static ConfiguredTarget buildRule(
-      RuleContext ruleContext, BaseFunction ruleImplementation, SkylarkSemantics skylarkSemantics)
+      RuleContext ruleContext,
+      AdvertisedProviderSet advertisedProviders,
+      BaseFunction ruleImplementation,
+      Location location,
+      SkylarkSemantics skylarkSemantics)
       throws InterruptedException, RuleErrorException, ActionConflictException {
     String expectFailure = ruleContext.attributes().get("expect_failure", Type.STRING);
     SkylarkRuleContext skylarkRuleContext = null;
@@ -86,12 +94,19 @@ public final class SkylarkRuleConfiguredTargetUtil {
               .setEventHandler(ruleContext.getAnalysisEnvironment().getEventHandler())
               .build(); // NB: loading phase functions are not available: this is analysis already,
       // so we do *not* setLoadingPhase().
+
+      final SkylarkRuleContext finalContext = skylarkRuleContext;
       Object target =
-          ruleImplementation.call(
-              /*args=*/ ImmutableList.of(skylarkRuleContext),
-              /*kwargs*/ ImmutableMap.of(),
-              /*ast=*/ null,
-              env);
+          DebugServerUtils.runWithDebuggingIfEnabled(
+              env,
+              () ->
+                  String.format("Target %s", ruleContext.getTarget().getLabel().getCanonicalForm()),
+              () ->
+                  ruleImplementation.call(
+                      /*args=*/ ImmutableList.of(finalContext),
+                      /*kwargs*/ ImmutableMap.of(),
+                      /*ast=*/ null,
+                      env));
 
       if (ruleContext.hasErrors()) {
         return null;
@@ -108,6 +123,7 @@ public final class SkylarkRuleConfiguredTargetUtil {
       }
       ConfiguredTarget configuredTarget = createTarget(skylarkRuleContext, target);
       SkylarkProviderValidationUtil.checkOrphanArtifacts(ruleContext);
+      checkDeclaredProviders(configuredTarget, advertisedProviders, location);
       return configuredTarget;
     } catch (EvalException e) {
       addRuleToStackTrace(e, ruleContext.getRule(), ruleImplementation);
@@ -122,6 +138,20 @@ public final class SkylarkRuleConfiguredTargetUtil {
     } finally {
       if (skylarkRuleContext != null) {
         skylarkRuleContext.nullify();
+      }
+    }
+  }
+
+  private static void checkDeclaredProviders(
+      ConfiguredTarget configuredTarget, AdvertisedProviderSet advertisedProviders, Location loc)
+      throws EvalException {
+    for (SkylarkProviderIdentifier providerId : advertisedProviders.getSkylarkProviders()) {
+      if (configuredTarget.get(providerId) == null) {
+        throw new EvalException(
+            loc,
+            String.format(
+                "rule advertised the '%s' provider, but this provider was not among those returned",
+                providerId.toString()));
       }
     }
   }
@@ -266,7 +296,7 @@ public final class SkylarkRuleConfiguredTargetUtil {
       SkylarkRuleContext context, RuleConfiguredTargetBuilder builder, Object target, Location loc)
       throws EvalException {
 
-    Info oldStyleProviders = NativeProvider.STRUCT.createEmpty(loc);
+    Info oldStyleProviders = StructProvider.STRUCT.createEmpty(loc);
     ArrayList<Info> declaredProviders = new ArrayList<>();
 
     if (target instanceof Info) {
@@ -274,7 +304,7 @@ public final class SkylarkRuleConfiguredTargetUtil {
       Info struct = (Info) target;
       // Use the creation location of this struct as a better reference in error messages
       loc = struct.getCreationLoc();
-      if (struct.getProvider().getKey().equals(NativeProvider.STRUCT.getKey())) {
+      if (struct.getProvider().getKey().equals(StructProvider.STRUCT.getKey())) {
         // Old-style struct, but it may contain declared providers
         oldStyleProviders = struct;
 

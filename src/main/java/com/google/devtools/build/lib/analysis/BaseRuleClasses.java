@@ -38,9 +38,9 @@ import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault;
 import com.google.devtools.build.lib.packages.Attribute.LabelListLateBoundDefault;
 import com.google.devtools.build.lib.packages.AttributeMap;
 import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.Builder;
 import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
 import com.google.devtools.build.lib.packages.TestSize;
+import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.syntax.Type;
 import com.google.devtools.build.lib.util.FileTypeSet;
 
@@ -48,7 +48,8 @@ import com.google.devtools.build.lib.util.FileTypeSet;
  * Rule class definitions used by (almost) every rule.
  */
 public class BaseRuleClasses {
-  private static final Attribute.ComputedDefault testonlyDefault =
+  @AutoCodec @AutoCodec.VisibleForSerialization
+  static final Attribute.ComputedDefault testonlyDefault =
       new Attribute.ComputedDefault() {
         @Override
         public Object getDefault(AttributeMap rule) {
@@ -56,7 +57,8 @@ public class BaseRuleClasses {
         }
       };
 
-  private static final Attribute.ComputedDefault deprecationDefault =
+  @AutoCodec @AutoCodec.VisibleForSerialization
+  static final Attribute.ComputedDefault deprecationDefault =
       new Attribute.ComputedDefault() {
         @Override
         public Object getDefault(AttributeMap rule) {
@@ -73,7 +75,7 @@ public class BaseRuleClasses {
    * they only run on the target configuration and should not operate on action_listeners and
    * extra_actions themselves (to avoid cycles).
    */
-  @VisibleForTesting
+  @AutoCodec @VisibleForTesting
   static final LabelListLateBoundDefault<?> ACTION_LISTENER =
       LabelListLateBoundDefault.fromTargetConfiguration(
           BuildConfiguration.class,
@@ -81,6 +83,7 @@ public class BaseRuleClasses {
 
   // TODO(b/65746853): provide a way to do this without passing the entire configuration
   /** Implementation for the :run_under attribute. */
+  @AutoCodec
   public static final LabelLateBoundDefault<?> RUN_UNDER =
       LabelLateBoundDefault.fromTargetConfiguration(
           BuildConfiguration.class,
@@ -95,7 +98,7 @@ public class BaseRuleClasses {
    */
   public static final class TestBaseRule implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder
           .requiresConfigurationFragments(TestConfiguration.class)
           .add(
@@ -178,6 +181,12 @@ public class BaseRuleClasses {
   }
 
   /**
+   * The attribute used to list the configuration properties used by a target and its transitive
+   * dependencies. Currently only supports config_feature_flag.
+   */
+  public static final String TAGGED_TRIMMING_ATTR = "transitive_configs";
+
+  /**
    * Share common attributes across both base and Skylark base rules.
    */
   public static RuleClass.Builder commonCoreAndSkylarkAttributes(RuleClass.Builder builder) {
@@ -192,6 +201,10 @@ public class BaseRuleClasses {
                 .cfg(HostTransition.INSTANCE)
                 .nonconfigurable(
                     "special attribute integrated more deeply into Bazel's core logic"))
+        .add(
+            attr(TAGGED_TRIMMING_ATTR, NODEP_LABEL_LIST)
+                .orderIndependent()
+                .nonconfigurable("Used in determining configuration"))
         .add(
             attr("deprecation", STRING)
                 .value(deprecationDefault)
@@ -251,7 +264,7 @@ public class BaseRuleClasses {
   public static final class RootRule implements RuleDefinition {
 
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment environment) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
         return nameAttribute(builder).build();
     }
 
@@ -307,7 +320,7 @@ public class BaseRuleClasses {
    */
   public static final class MakeVariableExpandingRule implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder
           /* <!-- #BLAZE_RULE($make_variable_expanding_rule).ATTRIBUTE(toolchains) -->
           The set of toolchains that supply <a href="${link make-variables}">"Make variables"</a>
@@ -334,7 +347,7 @@ public class BaseRuleClasses {
    */
   public static final class RuleBase implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder
           .add(attr("deps", LABEL_LIST).legacyAllowAnyFileType())
           .add(attr("data", LABEL_LIST).cfg(env.getLipoDataTransition())
@@ -359,7 +372,7 @@ public class BaseRuleClasses {
   /** A base rule for all binary rules. */
   public static final class BinaryBaseRule implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder
           .add(attr("args", STRING_LIST))
           .add(attr("output_licenses", LICENSE))
@@ -383,7 +396,7 @@ public class BaseRuleClasses {
   /** Rule class for rules in error. */
   public static final class ErrorRule implements RuleDefinition {
     @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
+    public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
       return builder.publicByDefault().build();
     }
 

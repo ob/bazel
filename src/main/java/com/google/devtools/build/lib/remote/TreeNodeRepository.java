@@ -21,7 +21,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Interner;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.TreeTraverser;
+import com.google.common.graph.Traverser;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
 import com.google.devtools.build.lib.actions.ActionInputHelper;
@@ -42,6 +42,7 @@ import com.google.protobuf.ByteString;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -55,9 +56,12 @@ import javax.annotation.Nullable;
  * computing and caching Merkle hashes on all objects.
  */
 @ThreadSafe
-public final class TreeNodeRepository extends TreeTraverser<TreeNodeRepository.TreeNode> {
+public final class TreeNodeRepository {
   // In this implementation, symlinks are NOT followed when expanding directory artifacts
   public static final Symlinks SYMLINK_POLICY = Symlinks.NOFOLLOW;
+
+  private final Traverser<TreeNode> traverser =
+      Traverser.forTree((TreeNode node) -> children(node));
 
   /**
    * A single node in a hierarchical directory structure. Leaves are the Artifacts, although we only
@@ -120,6 +124,9 @@ public final class TreeNodeRepository extends TreeTraverser<TreeNodeRepository.T
       public int hashCode() {
         return Objects.hash(segment, child);
       }
+
+      public static Comparator<ChildEntry> segmentOrder =
+          Comparator.comparing(ChildEntry::getSegment);
     }
 
     // Should only be called by the TreeNodeRepository.
@@ -231,14 +238,13 @@ public final class TreeNodeRepository extends TreeTraverser<TreeNodeRepository.T
     return inputFileCache;
   }
 
-  @Override
   public Iterable<TreeNode> children(TreeNode node) {
     return Iterables.transform(node.getChildEntries(), TreeNode.ChildEntry::getChild);
   }
 
   /** Traverse the directory structure in order (pre-order tree traversal). */
   public Iterable<TreeNode> descendants(TreeNode node) {
-    return preOrderTraversal(node);
+    return traverser.depthFirstPreOrder(node);
   }
 
   /**
@@ -342,6 +348,7 @@ public final class TreeNodeRepository extends TreeTraverser<TreeNodeRepository.T
         }
       }
     }
+    Collections.sort(entries, TreeNode.ChildEntry.segmentOrder);
     return interner.intern(new TreeNode(entries, null));
   }
 
@@ -355,23 +362,18 @@ public final class TreeNodeRepository extends TreeTraverser<TreeNodeRepository.T
         TreeNode child = entry.getChild();
         if (child.isLeaf()) {
           ActionInput input = child.getActionInput();
+          final Digest digest;
           if (input instanceof VirtualActionInput) {
             VirtualActionInput virtualInput = (VirtualActionInput) input;
-            Digest digest = digestUtil.compute(virtualInput);
+            digest = digestUtil.compute(virtualInput);
             virtualInputDigestCache.put(virtualInput, digest);
             // There may be multiple inputs with the same digest. In that case, we don't care which
             // one we get back from the digestVirtualInputCache later.
             digestVirtualInputCache.put(digest, virtualInput);
-            b.addFilesBuilder()
-                .setName(entry.getSegment())
-                .setDigest(digest)
-                .setIsExecutable(false);
           } else {
-            b.addFilesBuilder()
-                .setName(entry.getSegment())
-                .setDigest(DigestUtil.getFromInputCache(input, inputFileCache))
-                .setIsExecutable(execRoot.getRelative(input.getExecPathString()).isExecutable());
+            digest = DigestUtil.getFromInputCache(input, inputFileCache);
           }
+          b.addFilesBuilder().setName(entry.getSegment()).setDigest(digest).setIsExecutable(true);
         } else {
           Digest childDigest = Preconditions.checkNotNull(treeNodeDigestCache.get(child));
           if (child.getActionInput() != null) {

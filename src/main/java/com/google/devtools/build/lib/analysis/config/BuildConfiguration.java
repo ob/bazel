@@ -16,7 +16,6 @@ package com.google.devtools.build.lib.analysis.config;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Verify;
@@ -29,17 +28,16 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Interner;
 import com.google.common.collect.Interners;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MutableClassToInstanceMap;
 import com.google.devtools.build.lib.actions.ActionEnvironment;
 import com.google.devtools.build.lib.actions.ArtifactRoot;
 import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
+import com.google.devtools.build.lib.actions.CommandLines.CommandLineLimits;
 import com.google.devtools.build.lib.analysis.BlazeDirectories;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.analysis.config.transitions.ComposingPatchTransition;
 import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
 import com.google.devtools.build.lib.buildeventstream.BuildEventId;
 import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
@@ -51,11 +49,11 @@ import com.google.devtools.build.lib.events.Event;
 import com.google.devtools.build.lib.events.EventHandler;
 import com.google.devtools.build.lib.packages.RuleClassProvider;
 import com.google.devtools.build.lib.packages.Target;
+import com.google.devtools.build.lib.packages.TestTimeout;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skylarkinterface.SkylarkCallable;
+import com.google.devtools.build.lib.skylarkbuildapi.BuildConfigurationApi;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkInterfaceUtils;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
-import com.google.devtools.build.lib.skylarkinterface.SkylarkModuleCategory;
-import com.google.devtools.build.lib.util.Fingerprint;
 import com.google.devtools.build.lib.util.OS;
 import com.google.devtools.build.lib.util.RegexFilter;
 import com.google.devtools.build.lib.vfs.Path;
@@ -69,6 +67,7 @@ import com.google.devtools.common.options.OptionEffectTag;
 import com.google.devtools.common.options.OptionMetadataTag;
 import com.google.devtools.common.options.OptionsParsingException;
 import com.google.devtools.common.options.TriState;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -102,27 +101,25 @@ import javax.annotation.Nullable;
  *
  * <pre>c1.equals(c2) <=> c1==c2.</pre>
  */
-@SkylarkModule(
-  name = "configuration",
-  category = SkylarkModuleCategory.BUILTIN,
-  doc =
-      "This object holds information about the environment in which the build is running. See "
-          + "the <a href='../rules.$DOC_EXT#configurations'>Rules page</a> for more on the general "
-          + "concept of configurations."
-)
 // TODO(janakr): If overhead of fragments class names is too high, add constructor that just takes
 // fragments and gets names from them.
 @AutoCodec
-public class BuildConfiguration {
+public class BuildConfiguration implements BuildConfigurationApi {
   /**
    * Sorts fragments by class name. This produces a stable order which, e.g., facilitates consistent
    * output from buildMnemonic.
    */
+  @AutoCodec
   public static final Comparator<Class<? extends Fragment>> lexicalFragmentSorter =
       Comparator.comparing(Class::getName);
 
   private static final Interner<ImmutableSortedMap<Class<? extends Fragment>, Fragment>>
       fragmentsInterner = BlazeInterners.newWeakInterner();
+
+  /** Compute the default shell environment for actions from the command line options. */
+  public interface ActionEnvironmentProvider {
+    ActionEnvironment getActionEnvironment(BuildOptions options);
+  }
 
   /**
    * An interface for language-specific configurations.
@@ -158,31 +155,6 @@ public class BuildConfiguration {
     }
 
     /**
-     * The platform name is a concatenation of fragment platform names.
-     */
-    public String getPlatformName() {
-      return "";
-    }
-
-    /**
-     * Add items to the action environment.
-     *
-     * @param builder the map to add environment variables to
-     */
-    public void setupActionEnvironment(Map<String, String> builder) {
-    }
-
-    /**
-     * Returns the shell to be used.
-     *
-     * <p>Each configuration instance must have at most one fragment that returns non-null.
-     */
-    @SuppressWarnings("unused")
-    public PathFragment getShellExecutable() {
-      return null;
-    }
-
-    /**
      * Returns { 'option name': 'alternative default' } entries for options where the
      * "real default" should be something besides the default specified in the {@link Option}
      * declaration.
@@ -192,21 +164,16 @@ public class BuildConfiguration {
     }
 
     /**
-     * @return false if a Fragment understands that it won't be able to work with a given strategy,
-     *     or true otherwise.
-     */
-    public boolean compatibleWithStrategy(String strategyName) {
-      return true;
-    }
-
-    /**
      * Returns the transition that produces the "artifact owner" for this configuration, or null
      * if this configuration is its own owner.
      *
      * <p>If multiple fragments return the same transition, that transition is only applied
      * once. Multiple fragments may not return different non-null transitions.
+     *
+     * <p>Deprecated. The only known use of this is LIPO, which is on its deathbed.
      */
     @Nullable
+    @Deprecated
     public PatchTransition getArtifactOwnerTransition() {
       return null;
     }
@@ -219,15 +186,13 @@ public class BuildConfiguration {
      *
      * <p>If multiple fragments specify a transition, they're composed together in a
      * deterministic but undocumented order (so don't write code expecting a specific order).
+     *
+     * <p>Deprecated. The only known use of this is LIPO, which is on its deathbed.
      */
     @Nullable
+    @Deprecated
     public PatchTransition topLevelConfigurationHook(Target toTarget) {
       return null;
-    }
-
-    /** Returns a reserved set of action mnemonics. These cannot be used from a Skylark action. */
-    public ImmutableSet<String> getReservedActionMnemonics() {
-      return ImmutableSet.of();
     }
   }
 
@@ -411,10 +376,9 @@ public class BuildConfiguration {
     @Option(
       name = "experimental_separate_genfiles_directory",
       defaultValue = "true",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
-      metadataTags = { OptionMetadataTag.EXPERIMENTAL },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
+      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
       help = "Whether to have a separate genfiles directory or fold it into the bin directory"
     )
     public boolean separateGenfilesDirectory;
@@ -423,10 +387,9 @@ public class BuildConfiguration {
       name = "define",
       converter = Converters.AssignmentConverter.class,
       defaultValue = "",
-      category = "semantics",
       allowMultiple = true,
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS},
       help = "Each --define option specifies an assignment for a build variable."
     )
     public List<Map.Entry<String, String>> commandLineBuildVariables;
@@ -434,10 +397,9 @@ public class BuildConfiguration {
     @Option(
       name = "cpu",
       defaultValue = "",
-      category = "semantics",
       converter = AutoCpuConverter.class,
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS},
       help = "The target CPU."
     )
     public String cpu;
@@ -455,6 +417,21 @@ public class BuildConfiguration {
     public int minParamFileSize;
 
     @Option(
+        name = "defer_param_files",
+        defaultValue = "false",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = {
+          OptionEffectTag.LOADING_AND_ANALYSIS,
+          OptionEffectTag.EXECUTION,
+          OptionEffectTag.ACTION_COMMAND_LINES
+        },
+        help =
+            "Whether to use deferred param files. WHen set, param files will not be "
+                + "added to the action graph. Instead, they will be added as virtual action inputs "
+                + "and written at the same time as the action executes.")
+    public boolean deferParamFiles;
+
+    @Option(
       name = "experimental_extended_sanity_checks",
       defaultValue = "false",
       documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
@@ -469,9 +446,8 @@ public class BuildConfiguration {
     @Option(
       name = "strict_filesets",
       defaultValue = "false",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = { OptionEffectTag.BUILD_FILE_SEMANTICS, OptionEffectTag.EAGERNESS_TO_EXIT },
+      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS, OptionEffectTag.EAGERNESS_TO_EXIT},
       help =
           "If this option is enabled, filesets crossing package boundaries are reported "
               + "as errors. It does not work when check_fileset_dependencies_recursively is "
@@ -482,9 +458,8 @@ public class BuildConfiguration {
     @Option(
       name = "stamp",
       defaultValue = "false",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help = "Stamp binaries with the date, username, hostname, workspace information, etc."
     )
     public boolean stampBinaries;
@@ -495,9 +470,8 @@ public class BuildConfiguration {
       name = "instrumentation_filter",
       converter = RegexFilter.RegexFilterConverter.class,
       defaultValue = "-/javatests[/:],-/test/java[/:]",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "When coverage is enabled, only rules with names included by the "
               + "specified regex-based filter will be instrumented. Rules prefixed "
@@ -509,9 +483,8 @@ public class BuildConfiguration {
     @Option(
       name = "instrument_test_targets",
       defaultValue = "false",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "When coverage is enabled, specifies whether to consider instrumenting test rules. "
               + "When set, test rules included by --instrumentation_filter are instrumented. "
@@ -522,10 +495,9 @@ public class BuildConfiguration {
     @Option(
       name = "host_cpu",
       defaultValue = "",
-      category = "semantics",
       converter = AutoCpuConverter.class,
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS},
       help = "The host CPU."
     )
     public String hostCpu;
@@ -535,7 +507,6 @@ public class BuildConfiguration {
       abbrev = 'c',
       converter = CompilationMode.Converter.class,
       defaultValue = "fastbuild",
-      category = "semantics", // Should this be "flags"?
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
       effectTags = { OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.ACTION_COMMAND_LINES },
       help = "Specify the mode the binary will be built in. Values: 'fastbuild', 'dbg', 'opt'."
@@ -546,7 +517,6 @@ public class BuildConfiguration {
         name = "host_compilation_mode",
         converter = CompilationMode.Converter.class,
         defaultValue = "opt",
-        category = "semantics", // Should this be "flags"?
         documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
         effectTags = { OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.ACTION_COMMAND_LINES },
         help = "Specify the mode the tools used during the build will be built in. Values: "
@@ -575,12 +545,11 @@ public class BuildConfiguration {
     @Option(
       name = "platform_suffix",
       defaultValue = "null",
-      category = "misc",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
       effectTags = {
-          OptionEffectTag.LOSES_INCREMENTAL_STATE,
-          OptionEffectTag.AFFECTS_OUTPUTS,
-          OptionEffectTag.LOADING_AND_ANALYSIS
+        OptionEffectTag.LOSES_INCREMENTAL_STATE,
+        OptionEffectTag.AFFECTS_OUTPUTS,
+        OptionEffectTag.LOADING_AND_ANALYSIS
       },
       help = "Specifies a suffix to be added to the configuration directory."
     )
@@ -594,9 +563,8 @@ public class BuildConfiguration {
       converter = Converters.OptionalAssignmentConverter.class,
       allowMultiple = true,
       defaultValue = "",
-      category = "testing",
       documentationCategory = OptionDocumentationCategory.TESTING,
-      effectTags = { OptionEffectTag.TEST_RUNNER },
+      effectTags = {OptionEffectTag.TEST_RUNNER},
       help =
           "Specifies additional environment variables to be injected into the test runner "
               + "environment. Variables can be either specified by name, in which case its value "
@@ -606,6 +574,20 @@ public class BuildConfiguration {
     )
     public List<Map.Entry<String, String>> testEnvironment;
 
+    @Option(
+        name = "test_timeout",
+        defaultValue = "-1",
+        converter = TestTimeout.TestTimeoutConverter.class,
+        documentationCategory = OptionDocumentationCategory.TESTING,
+        effectTags = {OptionEffectTag.UNKNOWN},
+        help =
+            "Override the default test timeout values for test timeouts (in secs). If a single "
+                + "positive integer value is specified it will override all categories.  If 4 "
+                + "comma-separated integers are specified, they will override the timeouts for "
+                + "short, moderate, long and eternal (in that order). In either form, a value of "
+                + "-1 tells blaze to use its default timeouts for that category.")
+    public Map<TestTimeout, Duration> testTimeout;
+
     // TODO(bazel-team): The set of available variables from the client environment for actions
     // is computed independently in CommandEnvironment to inject a more restricted client
     // environment to skyframe.
@@ -614,9 +596,8 @@ public class BuildConfiguration {
       converter = Converters.OptionalAssignmentConverter.class,
       allowMultiple = true,
       defaultValue = "",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.ACTION_COMMAND_LINES},
+      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES},
       help =
           "Specifies the set of environment variables available to actions. "
               + "Variables can be either specified by name, in which case the value will be "
@@ -630,9 +611,8 @@ public class BuildConfiguration {
     @Option(
       name = "collect_code_coverage",
       defaultValue = "false",
-      category = "testing",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "If specified, Bazel will instrument code (using offline instrumentation where "
               + "possible) and will collect coverage information during tests. Only targets that "
@@ -642,68 +622,30 @@ public class BuildConfiguration {
     public boolean collectCodeCoverage;
 
     @Option(
-        name = "experimental_java_coverage",
-        defaultValue = "false",
-        category = "testing",
-        documentationCategory  = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-        effectTags =  { OptionEffectTag.AFFECTS_OUTPUTS },
-        help = "If true Bazel will use a new way of computing code coverage for java targets."
+      name = "experimental_java_coverage",
+      defaultValue = "false",
+      documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
+      help = "If true Bazel will use a new way of computing code coverage for java targets."
     )
     public boolean experimentalJavaCoverage;
 
-    @Option(
-      name = "coverage_support",
-      converter = LabelConverter.class,
-      defaultValue = "@bazel_tools//tools/test:coverage_support",
-      category = "testing",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {
-          OptionEffectTag.CHANGES_INPUTS,
-          OptionEffectTag.AFFECTS_OUTPUTS,
-          OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      help =
-          "Location of support files that are required on the inputs of every test action "
-              + "that collects code coverage. Defaults to '//tools/test:coverage_support'."
-    )
-    public Label coverageSupport;
 
-    @Option(
-      name = "coverage_report_generator",
-      converter = LabelConverter.class,
-      defaultValue = "@bazel_tools//tools/test:coverage_report_generator",
-      category = "testing",
-      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-      effectTags = {
-          OptionEffectTag.CHANGES_INPUTS,
-          OptionEffectTag.AFFECTS_OUTPUTS,
-          OptionEffectTag.LOADING_AND_ANALYSIS
-      },
-      help =
-          "Location of the binary that is used to generate coverage reports. This must "
-              + "currently be a filegroup that contains a single file, the binary. Defaults to "
-              + "'//tools/test:coverage_report_generator'."
-    )
-    public Label coverageReportGenerator;
 
     @Option(
       name = "build_runfile_manifests",
       defaultValue = "true",
-      category = "strategy",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
-      help =
-          "If true, write runfiles manifests for all targets.  "
-              + "If false, omit them."
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
+      help = "If true, write runfiles manifests for all targets.  " + "If false, omit them."
     )
     public boolean buildRunfilesManifests;
 
     @Option(
       name = "build_runfile_links",
       defaultValue = "true",
-      category = "strategy",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "If true, build runfiles symlink forests for all targets.  "
               + "If false, write only manifests when possible."
@@ -713,48 +655,40 @@ public class BuildConfiguration {
     @Option(
       name = "legacy_external_runfiles",
       defaultValue = "true",
-      category = "strategy",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "If true, build runfiles symlink forests for external repositories under "
               + ".runfiles/wsname/external/repo (in addition to .runfiles/repo)."
     )
     public boolean legacyExternalRunfiles;
 
-    @Deprecated
     @Option(
       name = "check_fileset_dependencies_recursively",
       defaultValue = "true",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      deprecationWarning = "This flag is a no-op and fileset dependencies are always checked "
-        + "to ensure correctness of builds.",
-      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS }
+      deprecationWarning =
+          "This flag is a no-op and fileset dependencies are always checked "
+              + "to ensure correctness of builds.",
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS}
     )
     public boolean checkFilesetDependenciesRecursively;
 
     @Option(
       name = "experimental_skyframe_native_filesets",
       defaultValue = "true",
-      category = "experimental",
-      documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
-      effectTags = { OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION },
-      metadataTags = { OptionMetadataTag.EXPERIMENTAL },
-      help =
-          "If true, Blaze will use the skyframe-native implementation of the Fileset rule."
-              + " This offers improved performance in incremental builds of Filesets as well as"
-              + " correct incremental behavior."
+      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+      effectTags = {OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION},
+      deprecationWarning = "This flag is a no-op and skyframe-native-filesets is always true."
     )
     public boolean skyframeNativeFileset;
 
     @Option(
       name = "run_under",
-      category = "run",
       defaultValue = "null",
       converter = RunUnderConverter.class,
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.ACTION_COMMAND_LINES},
+      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES},
       help =
           "Prefix to insert in front of command before running. "
               + "Examples:\n"
@@ -770,12 +704,11 @@ public class BuildConfiguration {
     @Option(
       name = "distinct_host_configuration",
       defaultValue = "true",
-      category = "strategy",
       documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
       effectTags = {
-          OptionEffectTag.LOSES_INCREMENTAL_STATE,
-          OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
-          OptionEffectTag.LOADING_AND_ANALYSIS,
+        OptionEffectTag.LOSES_INCREMENTAL_STATE,
+        OptionEffectTag.BAZEL_INTERNAL_CONFIGURATION,
+        OptionEffectTag.LOADING_AND_ANALYSIS,
       },
       help =
           "Build all the tools used during the build for a distinct configuration from that used "
@@ -795,9 +728,8 @@ public class BuildConfiguration {
     @Option(
       name = "check_visibility",
       defaultValue = "true",
-      category = "checking",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = { OptionEffectTag.BUILD_FILE_SEMANTICS },
+      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
       help = "If disabled, visibility errors are demoted to warnings."
     )
     public boolean checkVisibility;
@@ -808,9 +740,8 @@ public class BuildConfiguration {
     @Option(
       name = "check_licenses",
       defaultValue = "false",
-      category = "checking",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = { OptionEffectTag.BUILD_FILE_SEMANTICS },
+      effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS},
       help =
           "Check that licensing constraints imposed by dependent packages "
               + "do not conflict with distribution modes of the targets being built. "
@@ -834,11 +765,10 @@ public class BuildConfiguration {
       name = "experimental_action_listener",
       allowMultiple = true,
       defaultValue = "",
-      category = "experimental",
       converter = LabelListConverter.class,
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.EXECUTION },
-      metadataTags = { OptionMetadataTag.EXPERIMENTAL },
+      effectTags = {OptionEffectTag.EXECUTION},
+      metadataTags = {OptionMetadataTag.EXPERIMENTAL},
       help = "Use action_listener to attach an extra_action to existing build actions."
     )
     public List<Label> actionListeners;
@@ -872,9 +802,8 @@ public class BuildConfiguration {
       name = "features",
       allowMultiple = true,
       defaultValue = "",
-      category = "flags",
       documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = { OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS },
+      effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS},
       help =
           "The given features will be enabled or disabled by default for all packages. "
               + "Specifying -<feature> will disable the feature globally. "
@@ -889,9 +818,8 @@ public class BuildConfiguration {
       converter = LabelListConverter.class,
       allowMultiple = true,
       defaultValue = "",
-      category = "flags",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
-      effectTags = { OptionEffectTag.CHANGES_INPUTS },
+      effectTags = {OptionEffectTag.CHANGES_INPUTS},
       help =
           "Declares this build's target environment. Must be a label reference to an "
               + "\"environment\" rule. If specified, all top-level targets must be "
@@ -903,7 +831,6 @@ public class BuildConfiguration {
       name = "auto_cpu_environment_group",
       converter = EmptyToNullLabelConverter.class,
       defaultValue = "",
-      category = "flags",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
       effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
       metadataTags = {OptionMetadataTag.EXPERIMENTAL},
@@ -943,6 +870,16 @@ public class BuildConfiguration {
       /** Always including all fragments known to Blaze. */
       NOTRIM,
     }
+
+    @Option(
+        name = "experimental_use_late_bound_option_defaults",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
+        help =
+            "Allow using late bound option defaults. The purpose of this option is to help with "
+                + "removal of late bound option defaults.")
+    public boolean useLateBoundOptionDefaults;
 
     /**
      * Converter for --experimental_dynamic_configs.
@@ -1020,21 +957,13 @@ public class BuildConfiguration {
       // === Licenses ===
       host.checkLicenses = checkLicenses;
 
-      // === Fileset ===
-      host.skyframeNativeFileset = skyframeNativeFileset;
-
       // === Pass on C++ compiler features.
       host.defaultFeatures = ImmutableList.copyOf(defaultFeatures);
 
       return host;
     }
 
-    @Override
-    public Map<String, Set<Label>> getDefaultsLabels() {
-      return ImmutableMap.<String, Set<Label>>of(
-          "coverage_support", ImmutableSet.of(coverageSupport),
-          "coverage_report_generator", ImmutableSet.of(coverageReportGenerator));
-    }
+
   }
 
   private final String checksum;
@@ -1046,6 +975,7 @@ public class BuildConfiguration {
   private final String repositoryName;
   private final RepositoryName mainRepositoryName;
   private final ImmutableSet<String> reservedActionMnemonics;
+  private CommandLineLimits commandLineLimits;
 
   /**
    * Directories in the output tree.
@@ -1155,9 +1085,6 @@ public class BuildConfiguration {
   // is mutable, so a cached value there could fall out of date when it's updated.
   private final boolean actionsEnabled;
 
-  // TODO(bazel-team): Move this to a configuration fragment.
-  private final PathFragment shellExecutable;
-
   /**
    * The global "make variables" such as "$(TARGET_CPU)"; these get applied to all rules analyzed in
    * this configuration.
@@ -1166,12 +1093,13 @@ public class BuildConfiguration {
 
   private final ActionEnvironment actionEnv;
   private final ActionEnvironment testEnv;
+  private final ImmutableMap<TestTimeout, Duration> testTimeout;
 
   private final BuildOptions buildOptions;
+  private final BuildOptions.OptionsDiffForReconstruction buildOptionsDiff;
   private final Options options;
 
   private final String mnemonic;
-  private final String platformName;
 
   private final ImmutableMap<String, String> commandLineBuildVariables;
 
@@ -1267,41 +1195,6 @@ public class BuildConfiguration {
   }
 
   /**
-   * @return false if any of the fragments don't work well with the supplied strategy.
-   */
-  public boolean compatibleWithStrategy(final String strategyName) {
-    return Iterables.all(
-        fragments.values(),
-        new Predicate<Fragment>() {
-          @Override
-          public boolean apply(@Nullable Fragment fragment) {
-            return fragment.compatibleWithStrategy(strategyName);
-          }
-        });
-  }
-
-  /**
-   * Compute the shell environment, which, at configuration level, is a pair consisting of the
-   * statically set environment variables with their values and the set of environment variables to
-   * be inherited from the client environment.
-   */
-  private ActionEnvironment setupActionEnvironment() {
-    // We make a copy first to remove duplicate entries; last one wins.
-    Map<String, String> actionEnv = new HashMap<>();
-    // TODO(ulfjack): Remove all env variables from configuration fragments.
-    for (Fragment fragment : fragments.values()) {
-      fragment.setupActionEnvironment(actionEnv);
-    }
-    // Shell environment variables specified via options take precedence over the
-    // ones inherited from the fragments. In the long run, these fragments will
-    // be replaced by appropriate default rc files anyway.
-    for (Map.Entry<String, String> entry : options.actionEnvironment) {
-      actionEnv.put(entry.getKey(), entry.getValue());
-    }
-    return ActionEnvironment.split(actionEnv);
-  }
-
-  /**
    * Compute the test environment, which, at configuration level, is a pair consisting of the
    * statically set environment variables with their values and the set of environment variables to
    * be inherited from the client environment.
@@ -1320,12 +1213,14 @@ public class BuildConfiguration {
     return fragmentsInterner.intern(ImmutableSortedMap.copyOf(fragmentsMap, lexicalFragmentSorter));
   }
 
-  /**
-   * Constructs a new BuildConfiguration instance.
-   */
-  public BuildConfiguration(BlazeDirectories directories,
+  /** Constructs a new BuildConfiguration instance. */
+  public BuildConfiguration(
+      BlazeDirectories directories,
       Map<Class<? extends Fragment>, Fragment> fragmentsMap,
       BuildOptions buildOptions,
+      BuildOptions.OptionsDiffForReconstruction buildOptionsDiff,
+      ImmutableSet<String> reservedActionMnemonics,
+      ActionEnvironment actionEnvironment,
       String repositoryName) {
     this.directories = directories;
     this.fragments = makeFragmentsMap(fragmentsMap);
@@ -1334,6 +1229,7 @@ public class BuildConfiguration {
     this.skylarkVisibleFragments = buildIndexOfSkylarkVisibleFragments();
     this.repositoryName = repositoryName;
     this.buildOptions = buildOptions.clone();
+    this.buildOptionsDiff = buildOptionsDiff;
     this.actionsEnabled = buildOptions.enableActions();
     this.options = buildOptions.get(Options.class);
     this.separateGenfilesDirectory = options.separateGenfilesDirectory;
@@ -1374,15 +1270,14 @@ public class BuildConfiguration {
         OutputDirectory.MIDDLEMAN.getRoot(
             RepositoryName.MAIN, outputDirName, directories, mainRepositoryName);
 
-    this.platformName = buildPlatformName();
-
-    this.shellExecutable = computeShellExecutable();
-
-    this.actionEnv = setupActionEnvironment();
+    this.actionEnv = actionEnvironment;
 
     this.testEnv = setupTestEnvironment();
 
-    this.transitiveOptionDetails = computeOptionsMap(buildOptions, fragments.values());
+    this.testTimeout = ImmutableMap.copyOf(options.testTimeout);
+
+    this.transitiveOptionDetails =
+        computeOptionsMap(buildOptions, fragments.values(), options.useLateBoundOptionDefaults);
 
     ImmutableMap.Builder<String, String> globalMakeEnvBuilder = ImmutableMap.builder();
     for (Fragment fragment : fragments.values()) {
@@ -1400,15 +1295,12 @@ public class BuildConfiguration {
     globalMakeEnvBuilder.put("GENDIR", getGenfilesDirectory().getExecPath().getPathString());
     globalMakeEnv = globalMakeEnvBuilder.build();
 
-    checksum = Fingerprint.md5Digest(buildOptions.computeCacheKey());
+    checksum = buildOptions.computeChecksum();
     hashCode = computeHashCode();
 
-    ImmutableSet.Builder<String> reservedActionMnemonics = ImmutableSet.builder();
-    for (Fragment fragment : fragments.values()) {
-      reservedActionMnemonics.addAll(fragment.getReservedActionMnemonics());
-    }
-    this.reservedActionMnemonics = reservedActionMnemonics.build();
+    this.reservedActionMnemonics = reservedActionMnemonics;
     this.buildEventSupplier = Suppliers.memoize(this::createBuildEvent);
+    this.commandLineLimits = new CommandLineLimits(options.minParamFileSize);
   }
 
   /**
@@ -1416,7 +1308,9 @@ public class BuildConfiguration {
    * configuration is assumed to have).
    */
   public BuildConfiguration clone(
-      FragmentClassSet fragmentClasses, RuleClassProvider ruleClassProvider) {
+      FragmentClassSet fragmentClasses,
+      RuleClassProvider ruleClassProvider,
+      BuildOptions defaultBuildOptions) {
 
     ClassToInstanceMap<Fragment> fragmentsMap = MutableClassToInstanceMap.create();
     for (Fragment fragment : fragments.values()) {
@@ -1431,6 +1325,9 @@ public class BuildConfiguration {
             directories,
             fragmentsMap,
             options,
+            BuildOptions.diffForReconstruction(defaultBuildOptions, options),
+            reservedActionMnemonics,
+            actionEnv,
             mainRepositoryName.strippedName());
     return newConfig;
   }
@@ -1455,15 +1352,13 @@ public class BuildConfiguration {
     return options;
   }
 
-
-
   private ImmutableMap<String, Class<? extends Fragment>> buildIndexOfSkylarkVisibleFragments() {
     ImmutableMap.Builder<String, Class<? extends Fragment>> builder = ImmutableMap.builder();
 
     for (Class<? extends Fragment> fragmentClass : fragments.keySet()) {
-      String name = SkylarkModule.Resolver.resolveName(fragmentClass);
-      if (name != null) {
-        builder.put(name, fragmentClass);
+      SkylarkModule module = SkylarkInterfaceUtils.getSkylarkModule(fragmentClass);
+      if (module != null) {
+        builder.put(module.name(), fragmentClass);
       }
     }
     return builder.build();
@@ -1480,12 +1375,14 @@ public class BuildConfiguration {
 
   /** Computes and returns the {@link TransitiveOptionDetails} for this configuration. */
   private static TransitiveOptionDetails computeOptionsMap(
-      BuildOptions buildOptions, Iterable<Fragment> fragments) {
+      BuildOptions buildOptions, Iterable<Fragment> fragments, boolean useLateBoundOptionDefaults) {
     // Collect from our fragments "alternative defaults" for options where the default
     // should be something other than what's specified in Option.defaultValue.
     Map<String, Object> lateBoundDefaults = Maps.newHashMap();
-    for (Fragment fragment : fragments) {
-      lateBoundDefaults.putAll(fragment.lateBoundOptionDefaults());
+    if (useLateBoundOptionDefaults) {
+      for (Fragment fragment : fragments) {
+        lateBoundDefaults.putAll(fragment.lateBoundOptionDefaults());
+      }
     }
 
     return TransitiveOptionDetails.forOptionsWithDefaults(
@@ -1503,26 +1400,6 @@ public class BuildConfiguration {
     return Joiner.on('-').skipNulls().join(nameParts);
   }
 
-  private String buildPlatformName() {
-    StringBuilder platformNameBuilder = new StringBuilder();
-    for (Fragment fragment : fragments.values()) {
-      platformNameBuilder.append(fragment.getPlatformName());
-    }
-    return platformNameBuilder.toString();
-  }
-
-  /**
-   * The platform string, suitable for use as a key into a MakeEnvironment.
-   *
-   * <p>Is only there for platform-dependent vardefs. Use
-   * {@link com.google.devtools.build.lib.rules.cpp.CcToolchainProvider#getToolchainIdentifier()
-   * instead.
-   */
-  @Deprecated
-  public String getPlatformName() {
-    return platformName;
-  }
-
   /** Returns the output directory for this build configuration. */
   public ArtifactRoot getOutputDirectory(RepositoryName repositoryName) {
     return repositoryName.isMain() || repositoryName.equals(mainRepositoryName)
@@ -1531,9 +1408,12 @@ public class BuildConfiguration {
             repositoryName, outputDirName, directories, mainRepositoryName);
   }
 
+  @Override
+  public ArtifactRoot getBinDir() {
+    return getBinDirectory(RepositoryName.MAIN);
+  }
+
   /** Returns the bin directory for this build configuration. */
-  @SkylarkCallable(name = "bin_dir", structField = true, documented = false)
-  @Deprecated
   public ArtifactRoot getBinDirectory() {
     return getBinDirectory(RepositoryName.MAIN);
   }
@@ -1566,9 +1446,12 @@ public class BuildConfiguration {
             repositoryName, outputDirName, directories, mainRepositoryName);
   }
 
+  @Override
+  public ArtifactRoot getGenfilesDir() {
+    return getGenfilesDirectory(RepositoryName.MAIN);
+  }
+
   /** Returns the genfiles directory for this build configuration. */
-  @SkylarkCallable(name = "genfiles_dir", structField = true, documented = false)
-  @Deprecated
   public ArtifactRoot getGenfilesDirectory() {
     return getGenfilesDirectory(RepositoryName.MAIN);
   }
@@ -1617,8 +1500,7 @@ public class BuildConfiguration {
    * not match the host platform. You should only use this when invoking tools that are known to use
    * the native path separator, i.e., the path separator for the machine that they run on.
    */
-  @SkylarkCallable(name = "host_path_separator", structField = true,
-      doc = "Returns the separator for PATH environment variable, which is ':' on Unix.")
+  @Override
   public String getHostPathSeparator() {
     // TODO(bazel-team): Maybe do this in the constructor instead? This isn't serialization-safe.
     return OS.getCurrent() == OS.WINDOWS ? ";" : ":";
@@ -1657,13 +1539,6 @@ public class BuildConfiguration {
     return actionEnv;
   }
 
-  @SkylarkCallable(
-    name = "default_shell_env",
-    structField = true,
-    doc =
-        "A dictionary representing the static local shell environment. It maps variables "
-            + "to their values (strings)."
-  )
   /**
    * Return the "fixed" part of the actions' environment variables.
    *
@@ -1675,7 +1550,7 @@ public class BuildConfiguration {
    * <p>Since values of the "fixed" variables are already known at analysis phase, it is returned
    * here as a map.
    */
-  @Deprecated // Use getActionEnvironment instead.
+  @Override
   public ImmutableMap<String, String> getLocalShellEnvironment() {
     return actionEnv.getFixedEnv();
   }
@@ -1697,13 +1572,6 @@ public class BuildConfiguration {
   @Deprecated // Use getActionEnvironment instead.
   public ImmutableSet<String> getVariableShellEnvironment() {
     return actionEnv.getInheritedEnv();
-  }
-
-  /**
-   * Returns the path to sh.
-   */
-  public PathFragment getShellExecutable() {
-    return shellExecutable;
   }
 
   /**
@@ -1831,24 +1699,18 @@ public class BuildConfiguration {
     return options.legacyExternalRunfiles;
   }
 
-  public boolean getSkyframeNativeFileset() {
-    return options.skyframeNativeFileset;
-  }
-
   /**
    * Returns user-specified test environment variables and their values, as set by the --test_env
    * options.
    */
-  @Deprecated
-  @SkylarkCallable(
-    name = "test_env",
-    structField = true,
-    doc =
-        "A dictionary containing user-specified test environment variables and their values, "
-            + "as set by the --test_env options. DO NOT USE! This is not the complete environment!"
-  )
+  @Override
   public ImmutableMap<String, String> getTestEnv() {
     return testEnv.getFixedEnv();
+  }
+
+  /** Returns test timeout mapping as set by --test_timeout options. */
+  public ImmutableMap<TestTimeout, Duration> getTestTimeout() {
+    return testTimeout;
   }
 
   /**
@@ -1862,15 +1724,15 @@ public class BuildConfiguration {
     return testEnv;
   }
 
-  public int getMinParamFileSize() {
-    return options.minParamFileSize;
+  public CommandLineLimits getCommandLineLimits() {
+    return commandLineLimits;
   }
 
-  @SkylarkCallable(name = "coverage_enabled", structField = true,
-      doc = "A boolean that tells whether code coverage is enabled for this run. Note that this "
-          + "does not compute whether a specific rule should be instrumented for code coverage "
-          + "data collection. For that, see the <a href=\"ctx.html#coverage_instrumented\"><code>"
-          + "ctx.coverage_instrumented</code></a> function.")
+  public boolean deferParamFiles() {
+    return options.deferParamFiles;
+  }
+
+  @Override
   public boolean isCodeCoverageEnabled() {
     return options.collectCodeCoverage;
   }
@@ -1959,6 +1821,10 @@ public class BuildConfiguration {
     return buildOptions;
   }
 
+  public BuildOptions.OptionsDiffForReconstruction getBuildOptionsDiff() {
+    return buildOptionsDiff;
+  }
+
   public String getCpu() {
     return options.cpu;
   }
@@ -1981,22 +1847,6 @@ public class BuildConfiguration {
 
   public boolean enableWindowsExeLauncher() {
     return options.windowsExeLauncher;
-  }
-
-  /**
-   * Collects executables defined by fragments.
-   */
-  private PathFragment computeShellExecutable() {
-    PathFragment result = null;
-
-    for (Fragment fragment : fragments.values()) {
-      if (fragment.getShellExecutable() != null) {
-        Verify.verify(result == null);
-        result = fragment.getShellExecutable();
-      }
-    }
-
-    return result;
   }
 
   /**
@@ -2052,10 +1902,6 @@ public class BuildConfiguration {
     return skylarkVisibleFragments.keySet();
   }
 
-  public ImmutableSet<String> getReservedActionMnemonics() {
-    return reservedActionMnemonics;
-  }
-
   /**
    * Returns an extra transition that should apply to top-level targets in this
    * configuration. Returns null if no transition is needed.
@@ -2070,7 +1916,8 @@ public class BuildConfiguration {
       } else if (currentTransition == null) {
         currentTransition = fragmentTransition;
       } else {
-        currentTransition = new ComposingPatchTransition(currentTransition, fragmentTransition);
+        currentTransition =
+            TransitionResolver.composePatchTransitions(currentTransition, fragmentTransition);
       }
     }
     return currentTransition;
@@ -2098,5 +1945,9 @@ public class BuildConfiguration {
                 .setCpu(getCpu())
                 .build());
     return new BuildConfigurationEvent(eventId, builder.build());
+  }
+
+  public ImmutableSet<String> getReservedActionMnemonics() {
+    return reservedActionMnemonics;
   }
 }

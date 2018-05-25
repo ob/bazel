@@ -15,20 +15,19 @@ package com.google.devtools.build.lib.buildtool;
 
 import com.google.common.collect.ImmutableList;
 import com.google.devtools.build.lib.analysis.BuildView.AnalysisResult;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
 import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfigurationCollection;
 import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.query2.CommonQueryOptions;
 import com.google.devtools.build.lib.query2.ConfiguredTargetQueryEnvironment;
+import com.google.devtools.build.lib.query2.CqueryThreadsafeCallback;
 import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
 import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
 import com.google.devtools.build.lib.query2.engine.QueryException;
 import com.google.devtools.build.lib.query2.engine.QueryExpression;
 import com.google.devtools.build.lib.query2.engine.TargetLiteral;
-import com.google.devtools.build.lib.query2.engine.ThreadSafeOutputFormatterCallback;
+import com.google.devtools.build.lib.query2.output.CqueryOptions;
 import com.google.devtools.build.lib.runtime.CommandEnvironment;
 import com.google.devtools.build.lib.skyframe.SkyframeExecutorWrappingWalkableGraph;
 import com.google.devtools.build.skyframe.WalkableGraph;
@@ -109,7 +108,6 @@ public class CqueryBuildTool extends BuildTool {
         }
       }
     }
-
     WalkableGraph walkableGraph =
         SkyframeExecutorWrappingWalkableGraph.of(env.getSkyframeExecutor());
     ImmutableList<QueryFunction> extraFunctions =
@@ -117,6 +115,7 @@ public class CqueryBuildTool extends BuildTool {
             .addAll(ConfiguredTargetQueryEnvironment.CQUERY_FUNCTIONS)
             .addAll(env.getRuntime().getQueryFunctions())
             .build();
+    CqueryOptions cqueryOptions = request.getOptions(CqueryOptions.class);
     ConfiguredTargetQueryEnvironment configuredTargetQueryEnvironment =
         new ConfiguredTargetQueryEnvironment(
             request.getKeepGoing(),
@@ -127,27 +126,30 @@ public class CqueryBuildTool extends BuildTool {
             env.newTargetPatternEvaluator().getOffset(),
             env.getPackageManager().getPackagePath(),
             () -> walkableGraph,
-            request.getOptions(CommonQueryOptions.class).toSettings());
+            cqueryOptions.toSettings());
+    Iterable<CqueryThreadsafeCallback> callbacks =
+        configuredTargetQueryEnvironment.getDefaultOutputFormatters(
+            configuredTargetQueryEnvironment.getAccessor(),
+            cqueryOptions,
+            env.getReporter(),
+            env.getSkyframeExecutor(),
+            hostConfiguration,
+            runtime.getRuleClassProvider().getTrimmingTransitionFactory(),
+            cqueryOptions.aspectDeps.createResolver(env.getPackageManager(), env.getReporter()));
+    CqueryThreadsafeCallback callback =
+        CqueryThreadsafeCallback.getCallback(cqueryOptions.outputFormat, callbacks);
+    if (callback == null) {
+      env.getReporter()
+          .handle(
+              Event.error(
+                  String.format(
+                      "Invalid output format '%s'. Valid values are: %s",
+                      cqueryOptions.outputFormat,
+                      CqueryThreadsafeCallback.callbackNames(callbacks))));
+      return;
+    }
     QueryEvalResult result =
-        configuredTargetQueryEnvironment.evaluateQuery(
-            queryExpression,
-            new ThreadSafeOutputFormatterCallback<ConfiguredTarget>() {
-              @Override
-              public void processOutput(Iterable<ConfiguredTarget> partialResult)
-                  throws IOException, InterruptedException {
-                for (ConfiguredTarget configuredTarget : partialResult) {
-                  BuildConfiguration config = configuredTarget.getConfiguration();
-                  StringBuilder output =
-                      new StringBuilder()
-                          .append(
-                              ConfiguredTargetQueryEnvironment.getCorrectLabel(configuredTarget))
-                          .append(" (")
-                          .append(config != null && config.isHostConfiguration() ? "HOST" : config)
-                          .append(")");
-                  env.getReporter().getOutErr().printOutLn(output.toString());
-                }
-              }
-            });
+        configuredTargetQueryEnvironment.evaluateQuery(queryExpression, callback);
     if (result.isEmpty()) {
       env.getReporter().handle(Event.info("Empty query results"));
     }

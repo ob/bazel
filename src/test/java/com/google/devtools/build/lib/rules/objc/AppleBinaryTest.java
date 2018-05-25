@@ -44,7 +44,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -52,17 +51,6 @@ import org.junit.runners.JUnit4;
 /** Test case for apple_binary. */
 @RunWith(JUnit4.class)
 public class AppleBinaryTest extends ObjcRuleTestCase {
-  @Before
-  public final void turnOffPackageLoadingChecks() throws Exception {
-    // By default, PackageLoader loads every package the test harness loads, in order to verify
-    // the PackageLoader works correctly. In this test, however, PackageLoader sometimes fails to
-    // load packages and causes the test to become flaky.
-    // Since PackageLoader gets generally good coverage from the rest of Bazel's tests, and because
-    // we believe there's nothing special from the point of view of package loading in this test,
-    // we disable this verification here.
-    initializeSkyframeExecutor(/*doPackageLoadingChecks=*/ false);
-  }
-
   static final RuleType RULE_TYPE = new RuleType("apple_binary") {
     @Override
     Iterable<String> requiredAttributes(Scratch scratch, String packageDir,
@@ -108,8 +96,8 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
     ConfiguredTarget a = getConfiguredTarget("//a:a");
     ConfiguredTarget b = getDirectPrerequisite(a, "//a:b");
 
-    PathFragment aPath = a.getConfiguration().getOutputDirectory(RepositoryName.MAIN).getExecPath();
-    PathFragment bPath = b.getConfiguration().getOutputDirectory(RepositoryName.MAIN).getExecPath();
+    PathFragment aPath = getConfiguration(a).getOutputDirectory(RepositoryName.MAIN).getExecPath();
+    PathFragment bPath = getConfiguration(b).getOutputDirectory(RepositoryName.MAIN).getExecPath();
 
     assertThat(aPath.getPathString()).doesNotMatch("-min[0-9]");
     assertThat(bPath.getPathString()).contains("-min7.0-");
@@ -1047,7 +1035,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
       if (archBinary.getExecPathString().endsWith("bin_bin")) {
         Artifact protoLib =
             getFirstArtifactEndingWith(
-                getGeneratingAction(archBinary).getInputs(), "BundledProtos_0.a");
+                getGeneratingAction(archBinary).getInputs(), "BundledProtos.a");
         Artifact protoObject =
             getFirstArtifactEndingWith(
                 getGeneratingAction(protoLib).getInputs(), "Genfile.pbobjc.o");
@@ -1103,8 +1091,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
     Artifact arm64Binary = getSingleArchBinary(lipoAction, "arm64");
 
     Artifact armv7ProtoLib =
-        getFirstArtifactEndingWith(
-            getGeneratingAction(armv7Binary).getInputs(), "BundledProtos_0.a");
+        getFirstArtifactEndingWith(getGeneratingAction(armv7Binary).getInputs(), "BundledProtos.a");
     Artifact armv7ProtoObject =
         getFirstArtifactEndingWith(
             getGeneratingAction(armv7ProtoLib).getInputs(), "One.pbobjc.o");
@@ -1115,8 +1102,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
         getGeneratingAction(armv7ProtoObjcSource).getInputs(), "one.proto")).isNotNull();
 
     Artifact arm64ProtoLib =
-        getFirstArtifactEndingWith(
-            getGeneratingAction(arm64Binary).getInputs(), "BundledProtos_0.a");
+        getFirstArtifactEndingWith(getGeneratingAction(arm64Binary).getInputs(), "BundledProtos.a");
     Artifact arm64ProtoObject =
         getFirstArtifactEndingWith(
             getGeneratingAction(arm64ProtoLib).getInputs(), "Two.pbobjc.o");
@@ -1508,6 +1494,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
 
   @Test
   public void testFeatureFlags_offByDefault() throws Exception {
+    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
     scratchFeatureFlagTestLib();
     scratch.file(
         "test/BUILD",
@@ -1515,6 +1502,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
         "    name = 'bin',",
         "    deps = ['//lib:objcLib'],",
         "    platform_type = 'ios',",
+        "    transitive_configs = ['//lib:flag1', '//lib:flag2'],",
         ")");
 
     CommandAction linkAction = linkAction("//test:bin");
@@ -1536,6 +1524,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
 
   @Test
   public void testFeatureFlags_oneFlagOn() throws Exception {
+    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
     scratchFeatureFlagTestLib();
     scratch.file(
         "test/BUILD",
@@ -1545,7 +1534,8 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
         "    platform_type = 'ios',",
         "    feature_flags = {",
         "      '//lib:flag2': 'on',",
-        "    }",
+        "    },",
+        "    transitive_configs = ['//lib:flag1', '//lib:flag2'],",
         ")");
 
     CommandAction linkAction = linkAction("//test:bin");
@@ -1567,6 +1557,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
 
   @Test
   public void testFeatureFlags_allFlagsOn() throws Exception {
+    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
     scratchFeatureFlagTestLib();
     scratch.file(
         "test/BUILD",
@@ -1577,7 +1568,8 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
         "    feature_flags = {",
         "      '//lib:flag1': 'on',",
         "      '//lib:flag2': 'on',",
-        "    }",
+        "    },",
+        "    transitive_configs = ['//lib:flag1', '//lib:flag2'],",
         ")");
 
     CommandAction linkAction = linkAction("//test:bin");

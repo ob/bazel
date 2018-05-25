@@ -101,7 +101,7 @@ public class BuildEventStreamer implements EventHandler {
   private final CountingArtifactGroupNamer artifactGroupNamer = new CountingArtifactGroupNamer();
   private OutErrProvider outErrProvider;
   private AbortReason abortReason = AbortReason.UNKNOWN;
-  // Will be set to true if the build was invoked through "bazel test".
+  // Will be set to true if the build was invoked through "bazel test" or "bazel coverage".
   private boolean isTestCommand;
 
   // After a BuildCompetingEvent we might expect a whitelisted set of events. If non-null,
@@ -401,6 +401,14 @@ public class BuildEventStreamer implements EventHandler {
     if (name == null) {
       return;
     }
+    // We only split if the max number of entries is at least 2 (it must be at least a binary tree).
+    // The method throws for smaller values.
+    if (options.maxNamedSetEntries >= 2) {
+      // We only split the event after naming it to avoid splitting the same node multiple times.
+      // Note that the artifactGroupNames keeps references to the individual pieces, so this can
+      // double the memory consumption of large nested sets.
+      view = view.splitIfExceedsMaximumSize(options.maxNamedSetEntries);
+    }
     for (NestedSetView<Artifact> transitive : view.transitives()) {
       maybeReportArtifactSet(transitive);
     }
@@ -463,7 +471,8 @@ public class BuildEventStreamer implements EventHandler {
 
     if (event instanceof BuildStartingEvent) {
       BuildRequest buildRequest = ((BuildStartingEvent) event).getRequest();
-      isTestCommand = "test".equals(buildRequest.getCommandName());
+      isTestCommand = "test".equals(buildRequest.getCommandName())
+          || "coverage".equals(buildRequest.getCommandName());
     }
 
     if (event instanceof BuildEventWithConfiguration) {

@@ -20,7 +20,6 @@ import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.Fragment;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.StrictDepsMode;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.ConfigurationEnvironment;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
 import com.google.devtools.build.lib.analysis.config.FragmentOptions;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
@@ -54,7 +53,6 @@ public class ProtoConfiguration extends Fragment {
       name = "protocopt",
       allowMultiple = true,
       defaultValue = "",
-      category = "flags",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
       help = "Additional options to pass to the protobuf compiler."
@@ -64,7 +62,6 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "experimental_proto_extra_actions",
       defaultValue = "false",
-      category = "experimental",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
       metadataTags = {OptionMetadataTag.EXPERIMENTAL},
@@ -75,7 +72,6 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "proto_compiler",
       defaultValue = "@com_google_protobuf//:protoc",
-      category = "flags",
       converter = BuildConfiguration.LabelConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
@@ -86,7 +82,6 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "proto_toolchain_for_javalite",
       defaultValue = "@com_google_protobuf_javalite//:javalite_toolchain",
-      category = "flags",
       converter = BuildConfiguration.EmptyToNullLabelConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
@@ -97,7 +92,6 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "proto_toolchain_for_java",
       defaultValue = "@com_google_protobuf//:java_toolchain",
-      category = "flags",
       converter = BuildConfiguration.EmptyToNullLabelConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
@@ -106,9 +100,19 @@ public class ProtoConfiguration extends Fragment {
     public Label protoToolchainForJava;
 
     @Option(
+      name = "proto_toolchain_for_j2objc",
+      defaultValue = "@bazel_tools//tools/j2objc:j2objc_proto_toolchain",
+      category = "flags",
+      converter = BuildConfiguration.EmptyToNullLabelConverter.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
+      help = "Label of proto_lang_toolchain() which describes how to compile j2objc protos"
+    )
+    public Label protoToolchainForJ2objc;
+
+    @Option(
       name = "proto_toolchain_for_cc",
       defaultValue = "@com_google_protobuf//:cc_toolchain",
-      category = "flags",
       converter = BuildConfiguration.EmptyToNullLabelConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
@@ -120,7 +124,6 @@ public class ProtoConfiguration extends Fragment {
       name = "strict_proto_deps",
       defaultValue = "strict",
       converter = BuildConfiguration.StrictDepsConverter.class,
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
       effectTags = {OptionEffectTag.BUILD_FILE_SEMANTICS, OptionEffectTag.EAGERNESS_TO_EXIT},
       metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
@@ -133,7 +136,6 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "cc_proto_library_header_suffixes",
       defaultValue = ".pb.h",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
       help = "Sets the prefixes of header files that a cc_proto_library creates.",
@@ -144,38 +146,12 @@ public class ProtoConfiguration extends Fragment {
     @Option(
       name = "cc_proto_library_source_suffixes",
       defaultValue = ".pb.cc",
-      category = "semantics",
       documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
       effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
       help = "Sets the prefixes of source files that a cc_proto_library creates.",
       converter = Converters.CommaSeparatedOptionListConverter.class
     )
     public List<String> ccProtoLibrarySourceSuffixes;
-
-    // TODO(b/64032754): Remove once there's no 'correctRollupTransitiveProtoRuntimes' in the global
-    //     blazerc.
-    @Option(
-      name = "correctRollupTransitiveProtoRuntimes",
-      defaultValue = "true",
-      category = "rollout",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "ignored"
-    )
-    public boolean correctRollupTransitiveProtoRuntimes;
-
-    // TODO(b/62710272): Remove once there's no 'jplNonStrictDepsLikePl' in the global blazerc.
-    @Option(
-      name = "jplNonStrictDepsLikePl",
-      defaultValue = "true",
-      category = "rollout",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.LOADING_AND_ANALYSIS},
-      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "ignored"
-    )
-    public boolean jplNonStrictDepsLikePl;
 
     @Override
     public FragmentOptions getHost() {
@@ -185,6 +161,7 @@ public class ProtoConfiguration extends Fragment {
       host.experimentalProtoExtraActions = experimentalProtoExtraActions;
       host.protoCompiler = protoCompiler;
       host.protoToolchainForJava = protoToolchainForJava;
+      host.protoToolchainForJ2objc = protoToolchainForJ2objc;
       host.protoToolchainForJavaLite = protoToolchainForJavaLite;
       host.protoToolchainForCc = protoToolchainForCc;
       host.strictProtoDeps = strictProtoDeps;
@@ -199,7 +176,7 @@ public class ProtoConfiguration extends Fragment {
    */
   public static class Loader implements ConfigurationFragmentFactory {
     @Override
-    public Fragment create(ConfigurationEnvironment env, BuildOptions buildOptions)
+    public Fragment create(BuildOptions buildOptions)
         throws InvalidConfigurationException {
       return new ProtoConfiguration(buildOptions.get(Options.class));
     }
@@ -247,6 +224,10 @@ public class ProtoConfiguration extends Fragment {
 
   public Label protoToolchainForJava() {
     return options.protoToolchainForJava;
+  }
+
+  public Label protoToolchainForJ2objc() {
+    return options.protoToolchainForJ2objc;
   }
 
   public Label protoToolchainForJavaLite() {

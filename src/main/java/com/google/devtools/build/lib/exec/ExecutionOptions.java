@@ -16,7 +16,6 @@ package com.google.devtools.build.lib.exec;
 import com.google.common.collect.Iterables;
 import com.google.devtools.build.lib.actions.ResourceSet;
 import com.google.devtools.build.lib.analysis.config.PerLabelOptions;
-import com.google.devtools.build.lib.packages.TestTimeout;
 import com.google.devtools.build.lib.util.OptionsUtils;
 import com.google.devtools.build.lib.util.RegexFilter;
 import com.google.devtools.build.lib.vfs.PathFragment;
@@ -26,10 +25,8 @@ import com.google.devtools.common.options.OptionEffectTag;
 import com.google.devtools.common.options.Options;
 import com.google.devtools.common.options.OptionsBase;
 import com.google.devtools.common.options.OptionsParsingException;
-import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Options affecting the execution phase of a build.
@@ -54,7 +51,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "verbose_failures",
     defaultValue = "false",
-    category = "verbosity",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help = "If a command fails, print out the full command line."
@@ -65,7 +61,6 @@ public class ExecutionOptions extends OptionsBase {
     name = "subcommands",
     abbrev = 's',
     defaultValue = "false",
-    category = "verbosity",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help = "Display the subcommands executed during a build."
@@ -75,7 +70,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "check_up_to_date",
     defaultValue = "false",
-    category = "what",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -88,7 +82,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "check_tests_up_to_date",
     defaultValue = "false",
-    category = "testing",
     implicitRequirements = {"--check_up_to_date"},
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
@@ -103,7 +96,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "test_strategy",
     defaultValue = "",
-    category = "testing",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help = "Specifies which strategy to use when running tests."
@@ -113,7 +105,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "test_keep_going",
     defaultValue = "true",
-    category = "testing",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -125,7 +116,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "runs_per_test_detects_flakes",
     defaultValue = "false",
-    category = "testing",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -138,7 +128,6 @@ public class ExecutionOptions extends OptionsBase {
     name = "flaky_test_attempts",
     allowMultiple = true,
     defaultValue = "default",
-    category = "testing",
     converter = TestAttemptsConverter.class,
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
@@ -156,7 +145,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "test_tmpdir",
     defaultValue = "null",
-    category = "testing",
     converter = OptionsUtils.PathFragmentConverter.class,
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
@@ -167,7 +155,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "test_output",
     defaultValue = "summary",
-    category = "testing",
     converter = TestStrategy.TestOutputFormat.Converter.class,
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
@@ -183,7 +170,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "test_summary",
     defaultValue = "short",
-    category = "testing",
     converter = TestStrategy.TestSummaryFormat.Converter.class,
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
@@ -196,25 +182,8 @@ public class ExecutionOptions extends OptionsBase {
   public TestStrategy.TestSummaryFormat testSummary;
 
   @Option(
-    name = "test_timeout",
-    defaultValue = "-1",
-    category = "testing",
-    converter = TestTimeout.TestTimeoutConverter.class,
-    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-    effectTags = {OptionEffectTag.UNKNOWN},
-    help =
-        "Override the default test timeout values for test timeouts (in secs). If a single "
-            + "positive integer value is specified it will override all categories.  If 4 "
-            + "comma-separated integers are specified, they will override the timeouts for short, "
-            + "moderate, long and eternal (in that order). In either form, a value of -1 tells "
-            + "blaze to use its default timeouts for that category."
-  )
-  public Map<TestTimeout, Duration> testTimeout;
-
-  @Option(
     name = "resource_autosense",
     defaultValue = "false",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help = "This flag has no effect, and is deprecated"
@@ -224,7 +193,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "ram_utilization_factor",
     defaultValue = "67",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -243,7 +211,6 @@ public class ExecutionOptions extends OptionsBase {
   @Option(
     name = "local_resources",
     defaultValue = "null",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -258,9 +225,23 @@ public class ExecutionOptions extends OptionsBase {
   public ResourceSet availableResources;
 
   @Option(
+    name = "experimental_local_memory_estimate",
+    defaultValue = "false",
+    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+    effectTags = {OptionEffectTag.UNKNOWN},
+    help =
+        "Estimate the actual memory available online. "
+            + "By default, Blaze assumes most actions use a fixed amount of memory, and counts "
+            + "that against the total available system memory, regardless of how much memory is "
+            + "actually available.  This option enables online estimation of how much memory is "
+            + "available at any given time, and thus does not require accurate estimation of how "
+            + "much memory a given action will take."
+  )
+  public boolean localMemoryEstimate;
+
+  @Option(
     name = "local_test_jobs",
     defaultValue = "0",
-    category = "testing",
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
@@ -308,6 +289,16 @@ public class ExecutionOptions extends OptionsBase {
             + " aggressive RAM optimizations in some cases."
   )
   public boolean enableCriticalPathProfiling;
+
+  @Option(
+    name = "experimental_execution_log_file",
+    defaultValue = "",
+    category = "verbosity",
+    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+    effectTags = {OptionEffectTag.UNKNOWN},
+    help = "Log the executed spawns into this file as delimited Spawn protos."
+  )
+  public String executionLogFile;
 
   /** Converter for the --flaky_test_attempts option. */
   public static class TestAttemptsConverter extends PerLabelOptions.PerLabelOptionsConverter {

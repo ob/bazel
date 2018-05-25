@@ -30,7 +30,6 @@ import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
-import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.Builder;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.stringtemplate.ExpansionException;
@@ -126,7 +125,8 @@ public class AppleStubBinary implements RuleConfiguredTargetFactory {
     RuleConfiguredTargetBuilder targetBuilder =
         ObjcRuleClasses.ruleConfiguredTarget(ruleContext, filesToBuild.build());
 
-    ObjcProvider.Builder objcProviderBuilder = new ObjcProvider.Builder();
+    ObjcProvider.Builder objcProviderBuilder =
+        new ObjcProvider.Builder(ruleContext.getAnalysisEnvironment().getSkylarkSemantics());
     for (ObjcProvider depProvider : configurationToDepsMap.values()) {
       objcProviderBuilder.addTransitiveAndPropagate(depProvider);
     }
@@ -153,7 +153,7 @@ public class AppleStubBinary implements RuleConfiguredTargetFactory {
       Artifact outputBinary)
       throws RuleErrorException {
     CustomCommandLine copyCommandLine =
-        new Builder()
+        new CustomCommandLine.Builder()
             .add("/bin/cp")
             .addDynamicString(resolveXcenvBasedPath(ruleContext, platform))
             .addExecPaths(ImmutableList.of(outputBinary))

@@ -16,6 +16,7 @@ package com.google.devtools.build.lib.syntax;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
 import com.google.devtools.build.lib.cmdline.Label;
@@ -25,16 +26,18 @@ import com.google.devtools.build.lib.events.EventHandler;
 import com.google.devtools.build.lib.events.EventKind;
 import com.google.devtools.build.lib.events.Location;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.Memoization;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkValue;
 import com.google.devtools.build.lib.syntax.Mutability.Freezable;
 import com.google.devtools.build.lib.syntax.Mutability.MutabilityException;
 import com.google.devtools.build.lib.util.Fingerprint;
 import com.google.devtools.build.lib.util.Pair;
 import com.google.devtools.build.lib.util.SpellChecker;
+import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -75,7 +78,7 @@ import javax.annotation.Nullable;
  * that the words "dynamic" and "static" refer to the point of view of the source code, and here we
  * have a dual point of view.
  */
-public final class Environment implements Freezable {
+public final class Environment implements Freezable, Debuggable {
 
   /**
    * A phase for enabling or disabling certain builtin functions
@@ -281,19 +284,36 @@ public final class Environment implements Freezable {
       this.bindings = new LinkedHashMap<>();
     }
 
-    public GlobalFrame(Mutability mutability, @Nullable GlobalFrame parent, @Nullable Label label) {
+    public GlobalFrame(
+        Mutability mutability,
+        @Nullable GlobalFrame parent,
+        @Nullable Label label,
+        @Nullable Map<String, Object> bindings) {
       this.mutability = Preconditions.checkNotNull(mutability);
       this.parent = parent;
       this.label = label;
       this.bindings = new LinkedHashMap<>();
+      if (bindings != null) {
+        this.bindings.putAll(bindings);
+      }
     }
 
     public GlobalFrame(Mutability mutability) {
-      this(mutability, null, null);
+      this(mutability, null, null, null);
     }
 
-    public GlobalFrame(Mutability mutability, GlobalFrame parent) {
-      this(mutability, parent, null);
+    public GlobalFrame(Mutability mutability, @Nullable GlobalFrame parent) {
+      this(mutability, parent, null, null);
+    }
+
+    public GlobalFrame(Mutability mutability, @Nullable GlobalFrame parent, @Nullable Label label) {
+      this(mutability, parent, label, null);
+    }
+
+    /** Constructs a global frame for the given builtin bindings. */
+    public static GlobalFrame createForBuiltins(Map<String, Object> bindings) {
+      Mutability mutability = Mutability.create("<builtins>").freeze();
+      return new GlobalFrame(mutability, null, null, bindings);
     }
 
     private void checkInitialized() {
@@ -477,7 +497,7 @@ public final class Environment implements Freezable {
   @Immutable
   // TODO(janakr,brandjon): Do Extensions actually have to start their own memoization? Or can we
   // have a node higher up in the hierarchy inject the mutability?
-  @AutoCodec(memoization = Memoization.START_MEMOIZING)
+  @AutoCodec
   public static final class Extension {
 
     private final ImmutableMap<String, Object> bindings;
@@ -526,6 +546,14 @@ public final class Environment implements Freezable {
           && bindings.equals(other.getBindings());
     }
 
+    private static boolean skylarkObjectsProbablyEqual(Object obj1, Object obj2) {
+      // TODO(b/76154791): check this more carefully.
+      return obj1.equals(obj2)
+          || (obj1 instanceof SkylarkValue
+              && obj2 instanceof SkylarkValue
+              && Printer.repr(obj1).equals(Printer.repr(obj2)));
+    }
+
     /**
      * Throws {@link IllegalStateException} if this {@link Extension} is not equal to {@code obj}.
      *
@@ -557,15 +585,50 @@ public final class Environment implements Freezable {
       for (String name : names) {
         Object value = bindings.get(name);
         Object otherValue = otherBindings.get(name);
-        if (!value.equals(otherValue)) {
-          badEntries.add(String.format(
-              "%s: this one has %s (class %s), but given one has %s (class %s)",
-              name,
-              Printer.repr(value),
-              value.getClass().getName(),
-              Printer.repr(otherValue),
-              otherValue.getClass().getName()));
+        if (value.equals(otherValue)) {
+          continue;
         }
+        if (value instanceof SkylarkNestedSet) {
+          if (otherValue instanceof SkylarkNestedSet
+              && ((SkylarkNestedSet) value)
+                  .toCollection()
+                  .equals(((SkylarkNestedSet) otherValue).toCollection())) {
+            continue;
+          }
+        } else if (value instanceof SkylarkDict) {
+          if (otherValue instanceof SkylarkDict) {
+            @SuppressWarnings("unchecked")
+            SkylarkDict<Object, Object> thisDict = (SkylarkDict<Object, Object>) value;
+            @SuppressWarnings("unchecked")
+            SkylarkDict<Object, Object> otherDict = (SkylarkDict<Object, Object>) otherValue;
+            if (thisDict.size() == otherDict.size()
+                && thisDict.keySet().equals(otherDict.keySet())) {
+              boolean foundProblem = false;
+              for (Object key : thisDict.keySet()) {
+                if (!skylarkObjectsProbablyEqual(
+                    Preconditions.checkNotNull(thisDict.get(key), key),
+                    Preconditions.checkNotNull(otherDict.get(key), key))) {
+                  foundProblem = true;
+                }
+              }
+              if (!foundProblem) {
+                continue;
+              }
+            }
+          }
+        } else if (skylarkObjectsProbablyEqual(value, otherValue)) {
+          continue;
+        }
+        badEntries.add(
+            String.format(
+                "%s: this one has %s (class %s, %s), but given one has %s (class %s, %s)",
+                name,
+                Printer.repr(value),
+                value.getClass().getName(),
+                value,
+                Printer.repr(otherValue),
+                otherValue.getClass().getName(),
+                otherValue));
       }
       if (!badEntries.isEmpty()) {
         throw new IllegalStateException(
@@ -1090,6 +1153,91 @@ public final class Environment implements Freezable {
     return vars;
   }
 
+  private static final class EvalEventHandler implements EventHandler {
+    List<String> messages = new ArrayList<>();
+
+    @Override
+    public void handle(Event event) {
+      if (event.getKind() == EventKind.ERROR) {
+        messages.add(event.getMessage());
+      }
+    }
+  }
+
+  @Override
+  public Object evaluate(String expression) throws EvalException, InterruptedException {
+    ParserInputSource inputSource =
+        ParserInputSource.create(expression, PathFragment.create("<debug eval>"));
+    EvalEventHandler eventHandler = new EvalEventHandler();
+    Expression expr = Parser.parseExpression(inputSource, eventHandler);
+    if (!eventHandler.messages.isEmpty()) {
+      throw new EvalException(expr.getLocation(), eventHandler.messages.get(0));
+    }
+    return expr.eval(this);
+  }
+
+  @Override
+  public ImmutableList<DebugFrame> listFrames(Location currentLocation) {
+    ImmutableList.Builder<DebugFrame> frameListBuilder = ImmutableList.builder();
+
+    Continuation currentContinuation = continuation;
+    Frame currentFrame = currentFrame();
+
+    // if there's a continuation then the current frame is a lexical frame
+    while (currentContinuation != null) {
+      frameListBuilder.add(
+          DebugFrame.builder()
+              .setLexicalFrameBindings(ImmutableMap.copyOf(currentFrame.getTransitiveBindings()))
+              .setGlobalBindings(ImmutableMap.copyOf(getGlobals().getTransitiveBindings()))
+              .setFunctionName(currentContinuation.function.getFullName())
+              .setLocation(currentLocation)
+              .build());
+
+      currentFrame = currentContinuation.lexicalFrame;
+      currentLocation = currentContinuation.caller.getLocation();
+      currentContinuation = currentContinuation.continuation;
+    }
+
+    frameListBuilder.add(
+        DebugFrame.builder()
+            .setGlobalBindings(ImmutableMap.copyOf(getGlobals().getTransitiveBindings()))
+            .setFunctionName("<top level>")
+            .setLocation(currentLocation)
+            .build());
+
+    return frameListBuilder.build();
+  }
+
+  @Override
+  @Nullable
+  public ReadyToPause stepControl(Stepping stepping) {
+    final Continuation pausedContinuation = continuation;
+
+    switch (stepping) {
+      case NONE:
+        return null;
+      case INTO:
+        // pause at the very next statement
+        return env -> true;
+      case OVER:
+        return env -> isAt(env, pausedContinuation) || isOutside(env, pausedContinuation);
+      case OUT:
+        // if we're at the outer-most frame, same as NONE
+        return pausedContinuation == null ? null : env -> isOutside(env, pausedContinuation);
+    }
+    throw new IllegalArgumentException("Unsupported stepping type: " + stepping);
+  }
+
+  /** Returns true if {@code env} is in a parent frame of {@code pausedContinuation}. */
+  private static boolean isOutside(Environment env, @Nullable Continuation pausedContinuation) {
+    return pausedContinuation != null && env.continuation == pausedContinuation.continuation;
+  }
+
+  /** Returns true if {@code env} is at the same frame as {@code pausedContinuation. */
+  private static boolean isAt(Environment env, @Nullable Continuation pausedContinuation) {
+    return env.continuation == pausedContinuation;
+  }
+
   @Override
   public int hashCode() {
     throw new UnsupportedOperationException(); // avoid nondeterminism
@@ -1174,34 +1322,29 @@ public final class Environment implements Freezable {
     return transitiveHashCode;
   }
 
-  /** A read-only {@link Environment.GlobalFrame} with global constants in it only */
+  /** A read-only {@link Environment.GlobalFrame} with False/True/None constants only. */
   static final GlobalFrame CONSTANTS_ONLY = createConstantsGlobals();
 
-  /** A read-only {@link Environment.GlobalFrame} with initial globals */
+  /**
+   * A read-only {@link Environment.GlobalFrame} with initial globals as defined in
+   * MethodLibrary.
+   */
   public static final GlobalFrame DEFAULT_GLOBALS = createDefaultGlobals();
 
   /** To be removed when all call-sites are updated. */
   public static final GlobalFrame SKYLARK = DEFAULT_GLOBALS;
 
   private static Environment.GlobalFrame createConstantsGlobals() {
-    try (Mutability mutability = Mutability.create("CONSTANTS")) {
-      Environment env = Environment.builder(mutability)
-          .useDefaultSemantics()
-          .build();
-      Runtime.setupConstants(env);
-      return env.getGlobals();
-    }
+    ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
+    Runtime.addConstantsToBuilder(builder);
+    return GlobalFrame.createForBuiltins(builder.build());
   }
 
   private static Environment.GlobalFrame createDefaultGlobals() {
-    try (Mutability mutability = Mutability.create("BUILD")) {
-      Environment env = Environment.builder(mutability)
-          .useDefaultSemantics()
-          .build();
-      Runtime.setupConstants(env);
-      Runtime.setupMethodEnvironment(env, MethodLibrary.defaultGlobalFunctions);
-      return env.getGlobals();
-    }
+    ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
+    Runtime.addConstantsToBuilder(builder);
+    MethodLibrary.addBindingsToBuilder(builder);
+    return GlobalFrame.createForBuiltins(builder.build());
   }
 
   /** An exception thrown by {@link #FAIL_FAST_HANDLER}. */

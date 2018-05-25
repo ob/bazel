@@ -76,7 +76,10 @@ public class RepositoryDelegatorTest extends FoundationTestCase {
     Path root = scratch.dir("/outputbase");
     BlazeDirectories directories =
         new BlazeDirectories(
-            new ServerDirectories(root, root, root), root, TestConstants.PRODUCT_NAME);
+            new ServerDirectories(root, root, root),
+            root,
+            /* defaultSystemJavabase= */ null,
+            TestConstants.PRODUCT_NAME);
     delegatorFunction =
         new RepositoryDelegatorFunction(
             ImmutableMap.of(), null, new AtomicBoolean(true), ImmutableMap::of, directories);
@@ -118,8 +121,7 @@ public class RepositoryDelegatorTest extends FoundationTestCase {
                         TestRuleClassProvider.getRuleClassProvider(),
                         TestConstants.PACKAGE_FACTORY_BUILDER_FACTORY_FOR_TESTING
                             .builder(directories)
-                            .build(
-                                TestRuleClassProvider.getRuleClassProvider(), root.getFileSystem()),
+                            .build(TestRuleClassProvider.getRuleClassProvider()),
                         directories))
                 .put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, new LocalRepositoryLookupFunction())
                 .put(SkyFunctions.EXTERNAL_PACKAGE, new ExternalPackageFunction())

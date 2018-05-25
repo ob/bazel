@@ -18,7 +18,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMap.Builder;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.CompilationMode;
@@ -29,16 +28,17 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
 import com.google.devtools.build.lib.events.Location;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Variables;
+import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
 import com.google.devtools.build.lib.rules.cpp.CppConfiguration.Tool;
 import com.google.devtools.build.lib.rules.cpp.FdoSupport.FdoMode;
+import com.google.devtools.build.lib.rules.cpp.Link.LinkingMode;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkCallable;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
+import com.google.devtools.build.lib.syntax.EvalException;
 import com.google.devtools.build.lib.util.Pair;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig.CToolchain;
-import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig.CToolchain.OptionalFlag;
 import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig.LipoMode;
 import java.util.Map;
 import javax.annotation.Nullable;
@@ -74,17 +74,19 @@ public final class CcToolchainProvider extends ToolchainInfo {
           /* dynamicRuntimeLinkInputs= */ NestedSetBuilder.<Artifact>emptySet(Order.STABLE_ORDER),
           /* dynamicRuntimeLinkMiddleman= */ null,
           /* dynamicRuntimeSolibDir= */ PathFragment.EMPTY_FRAGMENT,
-          CcCompilationInfo.EMPTY,
+          CcCompilationContext.EMPTY,
           /* supportsParamFiles= */ false,
           /* supportsHeaderParsing= */ false,
-          Variables.EMPTY,
+          CcToolchainVariables.EMPTY,
           /* builtinIncludeFiles= */ ImmutableList.<Artifact>of(),
           /* coverageEnvironment= */ NestedSetBuilder.emptySet(Order.COMPILE_ORDER),
           /* linkDynamicLibraryTool= */ null,
-          /* environment= */ ImmutableMap.<String, String>of(),
           /* builtInIncludeDirectories= */ ImmutableList.<PathFragment>of(),
           /* sysroot= */ null,
-          FdoMode.OFF);
+          FdoMode.OFF,
+          /* useLLVMCoverageMapFormat= */ false,
+          /* codeCoverageEnabled= */ false,
+          /* isHostConfiguration= */ false);
 
   @Nullable private final CppConfiguration cppConfiguration;
   private final CppToolchainInfo toolchainInfo;
@@ -106,17 +108,21 @@ public final class CcToolchainProvider extends ToolchainInfo {
   private final NestedSet<Artifact> dynamicRuntimeLinkInputs;
   @Nullable private final Artifact dynamicRuntimeLinkMiddleman;
   private final PathFragment dynamicRuntimeSolibDir;
-  private final CcCompilationInfo ccCompilationInfo;
+  private final CcCompilationContext ccCompilationContext;
   private final boolean supportsParamFiles;
   private final boolean supportsHeaderParsing;
-  private final Variables buildVariables;
+  private final CcToolchainVariables buildVariables;
   private final ImmutableList<Artifact> builtinIncludeFiles;
   private final NestedSet<Pair<String, String>> coverageEnvironment;
   @Nullable private final Artifact linkDynamicLibraryTool;
-  private final ImmutableMap<String, String> environment;
   private final ImmutableList<PathFragment> builtInIncludeDirectories;
   @Nullable private final PathFragment sysroot;
   private final FdoMode fdoMode;
+  private final boolean useLLVMCoverageMapFormat;
+  private final boolean codeCoverageEnabled;
+  private final boolean isHostConfiguration;
+  private final boolean forcePic;
+  private final boolean shouldStripBinaries;
 
   public CcToolchainProvider(
       ImmutableMap<String, Object> values,
@@ -140,17 +146,19 @@ public final class CcToolchainProvider extends ToolchainInfo {
       NestedSet<Artifact> dynamicRuntimeLinkInputs,
       @Nullable Artifact dynamicRuntimeLinkMiddleman,
       PathFragment dynamicRuntimeSolibDir,
-      CcCompilationInfo ccCompilationInfo,
+      CcCompilationContext ccCompilationContext,
       boolean supportsParamFiles,
       boolean supportsHeaderParsing,
-      Variables buildVariables,
+      CcToolchainVariables buildVariables,
       ImmutableList<Artifact> builtinIncludeFiles,
       NestedSet<Pair<String, String>> coverageEnvironment,
       Artifact linkDynamicLibraryTool,
-      ImmutableMap<String, String> environment,
       ImmutableList<PathFragment> builtInIncludeDirectories,
       @Nullable PathFragment sysroot,
-      FdoMode fdoMode) {
+      FdoMode fdoMode,
+      boolean useLLVMCoverageMapFormat,
+      boolean codeCoverageEnabled,
+      boolean isHostConfiguration) {
     super(values, Location.BUILTIN);
     this.cppConfiguration = cppConfiguration;
     this.toolchainInfo = toolchainInfo;
@@ -172,17 +180,26 @@ public final class CcToolchainProvider extends ToolchainInfo {
     this.dynamicRuntimeLinkInputs = Preconditions.checkNotNull(dynamicRuntimeLinkInputs);
     this.dynamicRuntimeLinkMiddleman = dynamicRuntimeLinkMiddleman;
     this.dynamicRuntimeSolibDir = Preconditions.checkNotNull(dynamicRuntimeSolibDir);
-    this.ccCompilationInfo = Preconditions.checkNotNull(ccCompilationInfo);
+    this.ccCompilationContext = Preconditions.checkNotNull(ccCompilationContext);
     this.supportsParamFiles = supportsParamFiles;
     this.supportsHeaderParsing = supportsHeaderParsing;
     this.buildVariables = buildVariables;
     this.builtinIncludeFiles = builtinIncludeFiles;
     this.coverageEnvironment = coverageEnvironment;
     this.linkDynamicLibraryTool = linkDynamicLibraryTool;
-    this.environment = environment;
     this.builtInIncludeDirectories = builtInIncludeDirectories;
     this.sysroot = sysroot;
     this.fdoMode = fdoMode;
+    this.useLLVMCoverageMapFormat = useLLVMCoverageMapFormat;
+    this.codeCoverageEnabled = codeCoverageEnabled;
+    this.isHostConfiguration = isHostConfiguration;
+    if (cppConfiguration != null) {
+      this.forcePic = cppConfiguration.forcePic();
+      this.shouldStripBinaries = cppConfiguration.shouldStripBinaries();
+    } else {
+      this.forcePic = false;
+      this.shouldStripBinaries = false;
+    }
   }
 
   /** Returns c++ Make variables. */
@@ -241,8 +258,25 @@ public final class CcToolchainProvider extends ToolchainInfo {
     return result.build();
   }
 
+  /**
+   * Returns true if Fission is specified and supported by the CROSSTOOL for the build implied by
+   * the given configuration and toolchain.
+   */
+  public boolean useFission() {
+    return Preconditions.checkNotNull(cppConfiguration).fissionIsActiveForCurrentCompilationMode()
+        && supportsFission();
+  }
+
+  /**
+   * Returns true if Fission and PER_OBJECT_DEBUG_INFO are specified and supported by the CROSSTOOL
+   * for the build implied by the given configuration, toolchain and feature configuration.
+   */
+  public boolean shouldCreatePerObjectDebugInfo(FeatureConfiguration featureConfiguration) {
+    return useFission() && featureConfiguration.isEnabled(CppRuleClasses.PER_OBJECT_DEBUG_INFO);
+  }
+
   @Override
-  public void addGlobalMakeVariables(Builder<String, String> globalMakeEnvBuilder) {
+  public void addGlobalMakeVariables(ImmutableMap.Builder<String, String> globalMakeEnvBuilder) {
     globalMakeEnvBuilder.putAll(
         getCppBuildVariables(
             this::getToolPathFragment,
@@ -343,31 +377,51 @@ public final class CcToolchainProvider extends ToolchainInfo {
   }
 
   /**
-   * Returns the static runtime libraries.
+   * Returns true if the featureConfiguration includes statically linking the cpp runtimes.
+   *
+   * @param featureConfiguration the relevant FeatureConfiguration.
    */
-  public NestedSet<Artifact> getStaticRuntimeLinkInputs() {
-    return staticRuntimeLinkInputs;
+  public boolean shouldStaticallyLinkCppRuntimes(FeatureConfiguration featureConfiguration) {
+    return featureConfiguration.isEnabled(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES);
   }
 
-  /**
-   * Returns an aggregating middleman that represents the static runtime libraries.
-   */
-  @Nullable public Artifact getStaticRuntimeLinkMiddleman() {
-    return staticRuntimeLinkMiddleman;
+  /** Returns the static runtime libraries. */
+  public NestedSet<Artifact> getStaticRuntimeLinkInputs(FeatureConfiguration featureConfiguration) {
+    if (shouldStaticallyLinkCppRuntimes(featureConfiguration)) {
+      return staticRuntimeLinkInputs;
+    } else {
+      return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+    }
   }
 
-  /**
-   * Returns the dynamic runtime libraries.
-   */
-  public NestedSet<Artifact> getDynamicRuntimeLinkInputs() {
-    return dynamicRuntimeLinkInputs;
+  /** Returns an aggregating middleman that represents the static runtime libraries. */
+  @Nullable
+  public Artifact getStaticRuntimeLinkMiddleman(FeatureConfiguration featureConfiguration) {
+    if (shouldStaticallyLinkCppRuntimes(featureConfiguration)) {
+      return staticRuntimeLinkMiddleman;
+    } else {
+      return null;
+    }
   }
 
-  /**
-   * Returns an aggregating middleman that represents the dynamic runtime libraries.
-   */
-  @Nullable public Artifact getDynamicRuntimeLinkMiddleman() {
-    return dynamicRuntimeLinkMiddleman;
+  /** Returns the dynamic runtime libraries. */
+  public NestedSet<Artifact> getDynamicRuntimeLinkInputs(
+      FeatureConfiguration featureConfiguration) {
+    if (shouldStaticallyLinkCppRuntimes(featureConfiguration)) {
+      return dynamicRuntimeLinkInputs;
+    } else {
+      return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+    }
+  }
+
+  /** Returns an aggregating middleman that represents the dynamic runtime libraries. */
+  @Nullable
+  public Artifact getDynamicRuntimeLinkMiddleman(FeatureConfiguration featureConfiguration) {
+    if (shouldStaticallyLinkCppRuntimes(featureConfiguration)) {
+      return dynamicRuntimeLinkMiddleman;
+    } else {
+      return null;
+    }
   }
 
   /**
@@ -379,9 +433,9 @@ public final class CcToolchainProvider extends ToolchainInfo {
     return dynamicRuntimeSolibDir;
   }
 
-  /** Returns the {@code CcCompilationInfo} for the toolchain. */
-  public CcCompilationInfo getCcCompilationInfo() {
-    return ccCompilationInfo;
+  /** Returns the {@code CcCompilationContext} for the toolchain. */
+  public CcCompilationContext getCcCompilationContext() {
+    return ccCompilationContext;
   }
 
   /**
@@ -404,6 +458,10 @@ public final class CcToolchainProvider extends ToolchainInfo {
   @Nullable
   public CcToolchainFeatures getFeatures() {
     return toolchainInfo.getFeatures();
+  }
+
+  public Label getCcToolchainLabel() {
+    return toolchainInfo.getCcToolchainLabel();
   }
 
   /**
@@ -489,7 +547,7 @@ public final class CcToolchainProvider extends ToolchainInfo {
   }
 
   /** Returns build variables to be templated into the crosstool. */
-  public Variables getBuildVariables() {
+  public CcToolchainVariables getBuildVariables() {
     return buildVariables;
   }
 
@@ -506,10 +564,6 @@ public final class CcToolchainProvider extends ToolchainInfo {
    */
   public NestedSet<Pair<String, String>> getCoverageEnvironment() {
     return coverageEnvironment;
-  }
-
-  public ImmutableMap<String, String> getEnvironment() {
-    return environment;
   }
 
   /**
@@ -631,14 +685,25 @@ public final class CcToolchainProvider extends ToolchainInfo {
       name = "unfiltered_compiler_options",
       doc =
           "Returns the default list of options which cannot be filtered by BUILD "
-              + "rules. These should be appended to the command line after filtering."
-  )
-  public ImmutableList<String> getUnfilteredCompilerOptionsWithSysroot(Iterable<String> features) {
-    return toolchainInfo.getUnfilteredCompilerOptions(features, sysroot);
+              + "rules. These should be appended to the command line after filtering.")
+  // TODO(b/24373706): Remove this method once new C++ toolchain API is available
+  public ImmutableList<String> getUnfilteredCompilerOptionsWithSysroot(
+      Iterable<String> featuresNotUsedAnymore) {
+    return toolchainInfo.getUnfilteredCompilerOptions(sysroot);
   }
 
-  public ImmutableList<String> getUnfilteredCompilerOptions(Iterable<String> features) {
-    return toolchainInfo.getUnfilteredCompilerOptions(features, /* sysroot= */ null);
+  public ImmutableList<String> getUnfilteredCompilerOptions() {
+    return toolchainInfo.getUnfilteredCompilerOptions(/* sysroot= */ null);
+  }
+
+  /**
+   * Unused, for compatibility with things internal to Google.
+   *
+   * <p>Deprecated: Use platforms.
+   */
+  @Deprecated
+  public String getTargetOS() {
+    return toolchainInfo.getTargetOS();
   }
 
   @SkylarkCallable(
@@ -691,8 +756,8 @@ public final class CcToolchainProvider extends ToolchainInfo {
    * Returns link options for the specified flag list, combined with universal options for all
    * shared libraries (regardless of link staticness).
    */
-  ImmutableList<String> getSharedLibraryLinkOptions(FlagList flags, Iterable<String> features) {
-    return toolchainInfo.getSharedLibraryLinkOptions(flags, features);
+  ImmutableList<String> getSharedLibraryLinkOptions(ImmutableList<String> flags) {
+    return toolchainInfo.getSharedLibraryLinkOptions(flags);
   }
 
   /** Returns compiler flags arising from the {@link CToolchain}. */
@@ -733,60 +798,73 @@ public final class CcToolchainProvider extends ToolchainInfo {
     return toolchainInfo.getLipoCxxFlags();
   }
 
-  /** Returns optional compiler flags arising from the {@link CToolchain}. */
-  ImmutableList<OptionalFlag> getOptionalCompilerFlags() {
-    return toolchainInfo.getOptionalCompilerFlags();
-  }
-
-  /** Returns optional compiler flags for C++ arising from the {@link CToolchain}. */
-  ImmutableList<OptionalFlag> getOptionalCxxFlags() {
-    return toolchainInfo.getOptionalCxxFlags();
-  }
-
   /** Returns linker flags for fully statically linked outputs. */
-  FlagList getFullyStaticLinkFlags(CompilationMode compilationMode, LipoMode lipoMode) {
-    return new FlagList(
-        configureLinkerOptions(
-            compilationMode, lipoMode, LinkingMode.FULLY_STATIC),
-        FlagList.convertOptionalOptions(toolchainInfo.getOptionalLinkerFlags()),
-        ImmutableList.<String>of());
+  ImmutableList<String> getLegacyFullyStaticLinkFlags(
+      CompilationMode compilationMode, LipoMode lipoMode) {
+    return configureAllLegacyLinkOptions(
+        compilationMode, lipoMode, LinkingMode.LEGACY_FULLY_STATIC);
   }
 
   /** Returns linker flags for mostly static linked outputs. */
-  FlagList getMostlyStaticLinkFlags(CompilationMode compilationMode, LipoMode lipoMode) {
-    return new FlagList(
-        configureLinkerOptions(
-            compilationMode, lipoMode, LinkingMode.MOSTLY_STATIC),
-        FlagList.convertOptionalOptions(toolchainInfo.getOptionalLinkerFlags()),
-        ImmutableList.<String>of());
+  ImmutableList<String> getLegacyMostlyStaticLinkFlags(
+      CompilationMode compilationMode, LipoMode lipoMode) {
+    return configureAllLegacyLinkOptions(compilationMode, lipoMode, LinkingMode.STATIC);
   }
 
   /** Returns linker flags for mostly static shared linked outputs. */
-  FlagList getMostlyStaticSharedLinkFlags(CompilationMode compilationMode, LipoMode lipoMode) {
-    return new FlagList(
-        configureLinkerOptions(
-            compilationMode,
-            lipoMode,
-            LinkingMode.MOSTLY_STATIC_LIBRARIES),
-        FlagList.convertOptionalOptions(toolchainInfo.getOptionalLinkerFlags()),
-        ImmutableList.<String>of());
+  ImmutableList<String> getLegacyMostlyStaticSharedLinkFlags(
+      CompilationMode compilationMode, LipoMode lipoMode) {
+    return configureAllLegacyLinkOptions(
+        compilationMode, lipoMode, LinkingMode.LEGACY_MOSTLY_STATIC_LIBRARIES);
   }
 
   /** Returns linker flags for artifacts that are not fully or mostly statically linked. */
-  FlagList getDynamicLinkFlags(CompilationMode compilationMode, LipoMode lipoMode) {
-    return new FlagList(
-        configureLinkerOptions(
-            compilationMode, lipoMode, LinkingMode.DYNAMIC),
-        FlagList.convertOptionalOptions(toolchainInfo.getOptionalLinkerFlags()),
-        ImmutableList.<String>of());
+  ImmutableList<String> getLegacyDynamicLinkFlags(
+      CompilationMode compilationMode, LipoMode lipoMode) {
+    return configureAllLegacyLinkOptions(compilationMode, lipoMode, LinkingMode.DYNAMIC);
   }
 
-  ImmutableList<String> configureLinkerOptions(
-      CompilationMode compilationMode,
-      LipoMode lipoMode,
-      LinkingMode linkingMode) {
-    return toolchainInfo.configureLinkerOptions(
-        compilationMode, lipoMode, linkingMode);
+  /**
+   * Return all flags coming from naked {@code linker_flag} fields in the crosstool. {@code
+   * linker_flag}s coming from linking_mode_flags and compilation_mode_flags are not included. If
+   * you need all possible linker flags, use {@link #configureAllLegacyLinkOptions(CompilationMode,
+   * LipoMode, LinkingMode)}.
+   */
+  public ImmutableList<String> getLegacyLinkOptions() {
+    return toolchainInfo.getLegacyLinkOptions();
+  }
+
+  /**
+   * Return all flags coming from {@code compiler_flag} crosstool fields excluding flags coming from
+   * --copt options and copts attribute.
+   */
+  public ImmutableList<String> getLegacyCompileOptions() {
+    ImmutableList.Builder<String> coptsBuilder =
+        ImmutableList.<String>builder()
+            .addAll(getToolchainCompilerFlags())
+            .addAll(getCFlagsByCompilationMode().get(cppConfiguration.getCompilationMode()))
+            .addAll(getLipoCFlags().get(cppConfiguration.getLipoMode()));
+
+    if (cppConfiguration.isOmitfp()) {
+      coptsBuilder.add("-fomit-frame-pointer");
+      coptsBuilder.add("-fasynchronous-unwind-tables");
+      coptsBuilder.add("-DNO_FRAME_POINTER");
+    }
+
+    return coptsBuilder.build();
+  }
+
+  public ImmutableList<String> getLegacyCompileOptionsWithCopts() {
+    return ImmutableList.<String>builder()
+        .addAll(getLegacyCompileOptions())
+        .addAll(cppConfiguration.getCopts())
+        .build();
+  }
+
+  /** Return all possible {@code linker_flag} flags from the crosstool. */
+  ImmutableList<String> configureAllLegacyLinkOptions(
+      CompilationMode compilationMode, LipoMode lipoMode, LinkingMode linkingMode) {
+    return toolchainInfo.configureAllLegacyLinkOptions(compilationMode, lipoMode, linkingMode);
   }
 
   /** Returns the GNU System Name */
@@ -813,6 +891,137 @@ public final class CcToolchainProvider extends ToolchainInfo {
     return fdoMode;
   }
 
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   */
+  @SkylarkCallable(
+      name = "compiler_options",
+      doc =
+          "Returns the default options to use for compiling C, C++, and assembler. "
+              + "This is just the options that should be used for all three languages. "
+              + "There may be additional C-specific or C++-specific options that should be used, "
+              + "in addition to the ones returned by this method"
+  )
+  public ImmutableList<String> getCompilerOptions() {
+    return getLegacyCompileOptionsWithCopts();
+  }
+
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   *
+   * <p>Returns the list of additional C-specific options to use for compiling C. These should be go
+   * on the command line after the common options returned by {@link
+   * CcToolchainProvider#getLegacyCompileOptionsWithCopts()}.
+   */
+  @SkylarkCallable(
+      name = "c_options",
+      doc =
+          "Returns the list of additional C-specific options to use for compiling C. "
+              + "These should be go on the command line after the common options returned by "
+              + "<code>compiler_options</code>")
+  public ImmutableList<String> getCOptions() {
+    return cppConfiguration.getCOptions();
+  }
+
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   *
+   * <p>Returns the list of additional C++-specific options to use for compiling C++. These should
+   * be on the command line after the common options returned by {@link #getCompilerOptions}.
+   */
+  @SkylarkCallable(
+      name = "cxx_options",
+      doc =
+          "Returns the list of additional C++-specific options to use for compiling C++. "
+              + "These should be go on the command line after the common options returned by "
+              + "<code>compiler_options</code>")
+  @Deprecated
+  public ImmutableList<String> getCxxOptionsWithCopts() {
+    return ImmutableList.<String>builder()
+        .addAll(getLegacyCxxOptions())
+        .addAll(cppConfiguration.getCxxopts())
+        .build();
+  }
+
+  public ImmutableList<String> getLegacyCxxOptions() {
+    return ImmutableList.<String>builder()
+        .addAll(getToolchainCxxFlags())
+        .addAll(getCxxFlagsByCompilationMode().get(cppConfiguration.getCompilationMode()))
+        .addAll(getLipoCxxFlags().get(cppConfiguration.getLipoMode()))
+        .build();
+  }
+
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   *
+   * <p>Returns the immutable list of linker options for fully statically linked outputs. Does not
+   * include command-line options passed via --linkopt or --linkopts.
+   *
+   * @param sharedLib true if the output is a shared lib, false if it's an executable
+   */
+  @SkylarkCallable(
+      name = "fully_static_link_options",
+      doc =
+          "Returns the immutable list of linker options for fully statically linked "
+              + "outputs. Does not include command-line options passed via --linkopt or "
+              + "--linkopts.")
+  @Deprecated
+  public ImmutableList<String> getFullyStaticLinkOptions(Boolean sharedLib) throws EvalException {
+    if (!sharedLib) {
+      throw new EvalException(
+          Location.BUILTIN, "fully_static_link_options is deprecated, new uses are not allowed.");
+    }
+    return CppHelper.getFullyStaticLinkOptions(cppConfiguration, this, sharedLib);
+  }
+
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   *
+   * Returns the immutable list of linker options for mostly statically linked outputs. Does not
+   * include command-line options passed via --linkopt or --linkopts.
+   *
+   * @param sharedLib true if the output is a shared lib, false if it's an executable
+   */
+  @SkylarkCallable(
+      name = "mostly_static_link_options",
+      doc =
+          "Returns the immutable list of linker options for mostly statically linked "
+              + "outputs. Does not include command-line options passed via --linkopt or "
+              + "--linkopts.")
+  @Deprecated
+  public ImmutableList<String> getMostlyStaticLinkOptions(Boolean sharedLib) {
+    return CppHelper.getMostlyStaticLinkOptions(
+        cppConfiguration, this, sharedLib, /* shouldStaticallyLinkCppRuntimes= */ true);
+  }
+
+  /**
+   * WARNING: This method is only added to allow incremental migration of existing users. Please do
+   * not use in new code. Will be removed soon as part of the new Skylark API to the C++ toolchain.
+   *
+   * Returns the immutable list of linker options for artifacts that are not fully or mostly
+   * statically linked. Does not include command-line options passed via --linkopt or --linkopts.
+   *
+   * @param sharedLib true if the output is a shared lib, false if it's an executable
+   */
+  @SkylarkCallable(
+      name = "dynamic_link_options",
+      doc =
+          "Returns the immutable list of linker options for artifacts that are not "
+              + "fully or mostly statically linked. Does not include command-line options "
+              + "passed via --linkopt or --linkopts."
+  )
+  @Deprecated
+  public ImmutableList<String> getDynamicLinkOptions(Boolean sharedLib) {
+    return CppHelper.getDynamicLinkOptions(cppConfiguration, this, sharedLib);
+  }
+
+
+
   // Not all of CcToolchainProvider is exposed to Skylark, which makes implementing deep equality
   // impossible: if Java-only parts are considered, the behavior is surprising in Skylark, if they
   // are not, the behavior is surprising in Java. Thus, object identity it is.
@@ -824,6 +1033,26 @@ public final class CcToolchainProvider extends ToolchainInfo {
   @Override
   public int hashCode() {
     return System.identityHashCode(this);
+  }
+
+  public boolean useLLVMCoverageMapFormat() {
+    return useLLVMCoverageMapFormat;
+  }
+
+  public boolean isCodeCoverageEnabled() {
+    return codeCoverageEnabled;
+  }
+
+  public boolean isHostConfiguration() {
+    return isHostConfiguration;
+  }
+
+  public boolean getForcePic() {
+    return forcePic;
+  }
+
+  public boolean getShouldStripBinaries() {
+    return shouldStripBinaries;
   }
 }
 

@@ -24,7 +24,6 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
-import java.util.function.Function;
 import javax.annotation.Nullable;
 
 /**
@@ -131,23 +130,12 @@ import javax.annotation.Nullable;
 // SerializationException. This requires just a little extra memo tracking for the MEMOIZE_AFTER
 // case.
 class Memoizer {
-
-  /**
-   * Constants used in the wire format to signal whether the next bytes are content or a
-   * backreference.
-   */
-  private enum MemoEntry {
-    NEW_VALUE,
-    BACKREF
-  }
-
-  private static ObjectCodec<MemoEntry> memoEntryCodec = new EnumCodec<>(MemoEntry.class);
-
   private Memoizer() {}
 
   /** A context for serializing; wraps a memo table. Not thread-safe. */
   static class Serializer {
     private final SerializingMemoTable memo = new SerializingMemoTable();
+
     /**
      * Serializes an object using the given codec and current memo table state.
      *
@@ -164,15 +152,14 @@ class Memoizer {
       if (strategy == MemoizationStrategy.DO_NOT_MEMOIZE) {
         codec.serialize(context, obj, codedOut);
       } else {
-        Integer id = memo.lookupNullable(obj);
-        if (id != null) {
-          memoEntryCodec.serialize(context, MemoEntry.BACKREF, codedOut);
-          codedOut.writeInt32NoTag(id);
-        } else {
-          memoEntryCodec.serialize(context, MemoEntry.NEW_VALUE, codedOut);
-          serializeMemoContent(context, obj, codec, codedOut, strategy);
-        }
+        // The caller already checked the table, so this is definitely a new value.
+        serializeMemoContent(context, obj, codec, codedOut, strategy);
       }
+    }
+
+    @Nullable
+    Integer getMemoizedIndex(Object obj) {
+      return memo.lookupNullable(obj);
     }
 
     // Corresponds to MemoContent in the abstract grammar.
@@ -242,38 +229,6 @@ class Memoizer {
     private final Deque<Object> memoizedBeforeStackForSanityChecking = new ArrayDeque<>();
 
     /**
-     * Additional data is dynamically typed, and retrieved using a type token.
-     *
-     * <p>If we need to support multiple kinds of additional data in the future, this could become
-     * a mapping.
-     */
-    private final Object additionalData;
-
-    Deserializer(Object additionalData) {
-      Preconditions.checkNotNull(additionalData);
-      this.additionalData = additionalData;
-    }
-
-    /**
-     * If this {@code Deserializer} was constructed with (non-null) additional data, and if its type
-     * satisfies the given type token {@code klass}, returns that additional data.
-     *
-     * @throws NullPointerException if no additional data is present
-     * @throws IllegalArgumentException if the additional data is not an instance of {@code klass}
-     */
-    <T> T getAdditionalData(Class<T> klass) {
-      try {
-        return klass.cast(additionalData);
-      } catch (ClassCastException e) {
-        throw new IllegalArgumentException(String.format(
-            "Codec requires additional data of type %s, but the available additional data has type "
-            + "%s",
-            klass.getName(),
-            additionalData.getClass().getName()));
-      }
-    }
-
-    /**
      * Deserializes an object using the given codec and current memo table state.
      *
      * @throws SerializationException on a logical error during deserialization
@@ -291,11 +246,6 @@ class Memoizer {
       if (strategy == MemoizationStrategy.DO_NOT_MEMOIZE) {
         return codec.deserialize(context, codedIn);
       } else {
-        MemoEntry memoEntry = memoEntryCodec.deserialize(context, codedIn);
-        if (memoEntry == MemoEntry.BACKREF) {
-          int id = codedIn.readInt32();
-          return lookupBackreference(id, codec);
-        } else if (memoEntry == MemoEntry.NEW_VALUE) {
           switch (strategy) {
             case MEMOIZE_BEFORE:
               return deserializeMemoBeforeContent(context, codec, codedIn);
@@ -304,10 +254,11 @@ class Memoizer {
             default:
               throw new AssertionError("Unreachable (strategy=" + strategy + ")");
           }
-        } else {
-          throw new AssertionError("Unreachable (memoEntry=" + memoEntry + ")");
         }
-      }
+    }
+
+    Object getMemoized(int memoIndex) {
+      return Preconditions.checkNotNull(memo.lookup(memoIndex), memoIndex);
     }
 
     private <T> T safeCast(Object obj, ObjectCodec<T> codec) throws SerializationException {
@@ -347,25 +298,14 @@ class Memoizer {
         throws IOException, SerializationException {
       return safeCast(codec.deserialize(context, codedIn), codec);
     }
-    /** Retrieves a memo entry, validating that it exists and has the expected type. */
-    private <T> T lookupBackreference(int id, ObjectCodec<T> codec) throws SerializationException {
-      Object savedUnchecked = memo.lookup(id);
-      if (savedUnchecked == null) {
-        throw new SerializationException(
-            "Found backreference to non-existent memo id (" + id + ")");
-      }
-      return safeCast(savedUnchecked, codec);
-    }
 
-    <A, T> T makeInitialValue(Function<A, T> initialValueFunction, Class<A> klass) {
-      T initial = initialValueFunction.apply(getAdditionalData(klass));
+    <T> void registerInitialValue(T initialValue) {
       int tag =
           Preconditions.checkNotNull(
-              tagForMemoizedBefore, " Not called with memoize before: %s", initial);
+              tagForMemoizedBefore, " Not called with memoize before: %s", initialValue);
       tagForMemoizedBefore = null;
-      memo.memoize(tag, initial);
-      memoizedBeforeStackForSanityChecking.addLast(initial);
-      return initial;
+      memo.memoize(tag, initialValue);
+      memoizedBeforeStackForSanityChecking.addLast(initialValue);
     }
 
     // Corresponds to MemoBeforeContent in the abstract grammar.
@@ -377,7 +317,10 @@ class Memoizer {
       Object initial = memoizedBeforeStackForSanityChecking.removeLast();
       if (value != initial) {
         // This indicates a bug in the particular codec subclass.
-        throw new SerializationException("doDeserialize did not return the initial instance");
+        throw new SerializationException(
+            String.format(
+                "codec did not return the initial instance: %s but was %s with codec %s",
+                value, initial, codec));
       }
       return value;
     }

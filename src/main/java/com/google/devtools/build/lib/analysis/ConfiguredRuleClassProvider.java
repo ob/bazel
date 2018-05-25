@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType.ABSTRACT;
 import static com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType.TEST;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -25,7 +26,9 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.devtools.build.lib.actions.ActionEnvironment;
 import com.google.devtools.build.lib.analysis.buildinfo.BuildInfoFactory;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.Fragment;
@@ -43,21 +46,24 @@ import com.google.devtools.build.lib.graph.Digraph;
 import com.google.devtools.build.lib.graph.Node;
 import com.google.devtools.build.lib.packages.Attribute;
 import com.google.devtools.build.lib.packages.NativeAspectClass;
-import com.google.devtools.build.lib.packages.NativeProvider;
 import com.google.devtools.build.lib.packages.NonconfigurableAttributeMapper;
 import com.google.devtools.build.lib.packages.OutputFile;
 import com.google.devtools.build.lib.packages.Rule;
 import com.google.devtools.build.lib.packages.RuleClass;
 import com.google.devtools.build.lib.packages.RuleClassProvider;
 import com.google.devtools.build.lib.packages.RuleErrorConsumer;
+import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
 import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkInterfaceUtils;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
 import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.Environment.Extension;
+import com.google.devtools.build.lib.syntax.Environment.GlobalFrame;
 import com.google.devtools.build.lib.syntax.Environment.Phase;
 import com.google.devtools.build.lib.syntax.Mutability;
+import com.google.devtools.build.lib.syntax.Runtime;
 import com.google.devtools.build.lib.syntax.SkylarkSemantics;
 import com.google.devtools.build.lib.syntax.SkylarkUtils;
 import com.google.devtools.build.lib.syntax.Type;
@@ -69,14 +75,15 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Set;
+import java.util.TreeSet;
 import javax.annotation.Nullable;
 
 /**
  * Knows about every rule Blaze supports and the associated configuration options.
  *
  * <p>This class is initialized on server startup and the set of rules, build info factories
- * and configuration options is guarantees not to change over the life time of the Blaze server.
+ * and configuration options is guaranteed not to change over the life time of the Blaze server.
  */
 public class ConfiguredRuleClassProvider implements RuleClassProvider {
 
@@ -227,16 +234,19 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
     private final Digraph<Class<? extends RuleDefinition>> dependencyGraph =
         new Digraph<>();
     private PatchTransition lipoDataTransition;
-    private Class<? extends BuildConfiguration.Fragment> universalFragment;
+    private List<Class<? extends BuildConfiguration.Fragment>> universalFragments =
+        new ArrayList<>();
+    @Nullable private RuleTransitionFactory trimmingTransitionFactory;
     private PrerequisiteValidator prerequisiteValidator;
     private ImmutableMap.Builder<String, Object> skylarkAccessibleTopLevels =
         ImmutableMap.builder();
-    private ImmutableList.Builder<Class<?>> skylarkModules =
-        ImmutableList.<Class<?>>builder().addAll(SkylarkModules.MODULES);
-    private ImmutableList.Builder<NativeProvider> nativeProviders = ImmutableList.builder();
+     private ImmutableList.Builder<Class<?>> skylarkModules =
+        ImmutableList.<Class<?>>builder();
+    private Set<String> reservedActionMnemonics = new TreeSet<>();
+    private BuildConfiguration.ActionEnvironmentProvider actionEnvironmentProvider =
+        (BuildOptions options) -> ActionEnvironment.EMPTY;
     private ImmutableBiMap.Builder<String, Class<? extends TransitiveInfoProvider>>
         registeredSkylarkProviders = ImmutableBiMap.builder();
-    private Map<String, String> platformRegexps = new TreeMap<>();
 
     // TODO(pcloudy): Remove this field after Bazel rule definitions are not used internally.
     private String nativeLauncherLabel;
@@ -343,9 +353,9 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
       return this;
     }
 
-    public Builder setUniversalConfigurationFragment(
+    public Builder addUniversalConfigurationFragment(
         Class<? extends BuildConfiguration.Fragment> fragment) {
-      this.universalFragment = fragment;
+      this.universalFragments.add(fragment);
       return this;
     }
 
@@ -359,28 +369,14 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
       return this;
     }
 
-    public Builder addNativeProvider(NativeProvider provider) {
-      this.nativeProviders.add(provider);
+    public Builder addReservedActionMnemonic(String mnemonic) {
+      this.reservedActionMnemonics.add(mnemonic);
       return this;
     }
 
-    /**
-     * Do not use - this only exists for backwards compatibility! Platform regexps are part of a
-     * legacy mechanism - {@code vardef} - that is not exposed in Bazel.
-     *
-     * <p>{@code vardef} needs explicit support in the rule implementations, and cannot express
-     * conditional dependencies, only conditional attribute values. This mechanism will be
-     * supplanted by configuration dependent attributes, and its effect can usually also be achieved
-     * with select().
-     *
-     * <p>This is a map of platform names to regexps. When a name is used as the third argument to
-     * {@code vardef}, the corresponding regexp is used to match on the C++ abi, and the variable is
-     * only set to that value if the regexp matches. For example, the entry
-     * {@code "oldlinux": "i[34]86-libc[345]-linux"} might define a set of platforms representing
-     * certain older linux releases.
-     */
-    public Builder addPlatformRegexps(Map<String, String> platformRegexps) {
-      this.platformRegexps.putAll(Preconditions.checkNotNull(platformRegexps));
+    public Builder setActionEnvironmentProvider(
+        BuildConfiguration.ActionEnvironmentProvider actionEnvironmentProvider) {
+      this.actionEnvironmentProvider = actionEnvironmentProvider;
       return this;
     }
 
@@ -397,6 +393,32 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
       Preconditions.checkState(lipoDataTransition == null, "LIPO data transition already set");
       lipoDataTransition = Preconditions.checkNotNull(transition);
       return this;
+    }
+
+    /**
+     * Sets the transition factory that produces a trimming transition to be run over all targets
+     * after other transitions.
+     *
+     * <p>This is a temporary measure for supporting manual trimming of feature flags, and support
+     * for this transition factory will likely be removed at some point in the future (whenever
+     * automatic trimming is sufficiently workable).
+     */
+    public Builder setTrimmingTransitionFactory(RuleTransitionFactory factory) {
+      Preconditions.checkState(
+          trimmingTransitionFactory == null, "Trimming transition factory already set");
+      trimmingTransitionFactory = Preconditions.checkNotNull(factory);
+      return this;
+    }
+
+    /**
+     * Overrides the transition factory run over all targets.
+     *
+     * @see #setTrimmingTransitionFactory(RuleTransitionFactory)
+     */
+    @VisibleForTesting(/* for testing trimming transition factories without relying on prod use */)
+    public Builder overrideTrimmingTransitionFactoryForTesting(RuleTransitionFactory factory) {
+      trimmingTransitionFactory = null;
+      return this.setTrimmingTransitionFactory(factory);
     }
 
     @Override
@@ -479,11 +501,13 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
           ImmutableList.copyOf(configurationOptions),
           ImmutableList.copyOf(configurationFragmentFactories),
           lipoDataTransition,
-          universalFragment,
+          ImmutableList.copyOf(universalFragments),
+          trimmingTransitionFactory,
           prerequisiteValidator,
           skylarkAccessibleTopLevels.build(),
           skylarkModules.build(),
-          nativeProviders.build());
+          ImmutableSet.copyOf(reservedActionMnemonics),
+          actionEnvironmentProvider);
     }
 
     @Override
@@ -507,11 +531,6 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
     @Override
     public String getToolsRepository() {
       return toolsRepository;
-    }
-
-    @Nullable
-    public Map<String, String> getPlatformRegexps() {
-      return platformRegexps.isEmpty() ? null : ImmutableMap.copyOf(platformRegexps);
     }
   }
 
@@ -582,11 +601,14 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
 
   private final PatchTransition lipoDataTransition;
 
+  /** The transition factory used to produce the transition that will trim targets. */
+  @Nullable private final RuleTransitionFactory trimmingTransitionFactory;
+
   /**
-   * A configuration fragment that should be available to all rules even when they don't
+   * Configuration fragments that should be available to all rules even when they don't
    * explicitly require it.
    */
-  private final Class<? extends BuildConfiguration.Fragment> universalFragment;
+  private final ImmutableList<Class<? extends BuildConfiguration.Fragment>> universalFragments;
 
   private final ImmutableList<BuildInfoFactory> buildInfoFactories;
 
@@ -594,7 +616,9 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
 
   private final Environment.GlobalFrame globals;
 
-  private final ImmutableList<NativeProvider> nativeProviders;
+  private final ImmutableSet<String> reservedActionMnemonics;
+
+  private final BuildConfiguration.ActionEnvironmentProvider actionEnvironmentProvider;
 
   private final ImmutableMap<String, Class<?>> configurationFragmentMap;
 
@@ -611,11 +635,13 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
       ImmutableList<Class<? extends FragmentOptions>> configurationOptions,
       ImmutableList<ConfigurationFragmentFactory> configurationFragments,
       PatchTransition lipoDataTransition,
-      Class<? extends BuildConfiguration.Fragment> universalFragment,
+      ImmutableList<Class<? extends BuildConfiguration.Fragment>> universalFragments,
+      @Nullable RuleTransitionFactory trimmingTransitionFactory,
       PrerequisiteValidator prerequisiteValidator,
       ImmutableMap<String, Object> skylarkAccessibleJavaClasses,
       ImmutableList<Class<?>> skylarkModules,
-      ImmutableList<NativeProvider> nativeProviders) {
+      ImmutableSet<String> reservedActionMnemonics,
+      BuildConfiguration.ActionEnvironmentProvider actionEnvironmentProvider) {
     this.preludeLabel = preludeLabel;
     this.runfilesPrefix = runfilesPrefix;
     this.toolsRepository = toolsRepository;
@@ -628,10 +654,12 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
     this.configurationOptions = configurationOptions;
     this.configurationFragmentFactories = configurationFragments;
     this.lipoDataTransition = lipoDataTransition;
-    this.universalFragment = universalFragment;
+    this.universalFragments = universalFragments;
+    this.trimmingTransitionFactory = trimmingTransitionFactory;
     this.prerequisiteValidator = prerequisiteValidator;
     this.globals = createGlobals(skylarkAccessibleJavaClasses, skylarkModules);
-    this.nativeProviders = nativeProviders;
+    this.reservedActionMnemonics = reservedActionMnemonics;
+    this.actionEnvironmentProvider = actionEnvironmentProvider;
     this.configurationFragmentMap = createFragmentMap(configurationFragmentFactories);
   }
 
@@ -696,6 +724,18 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
   }
 
   /**
+   * Returns the transition factory used to produce the transition to trim targets.
+   *
+   * <p>This is a temporary measure for supporting manual trimming of feature flags, and support
+   * for this transition factory will likely be removed at some point in the future (whenever
+   * automatic trimming is sufficiently workable
+   */
+  @Nullable
+  public RuleTransitionFactory getTrimmingTransitionFactory() {
+    return trimmingTransitionFactory;
+  }
+
+  /**
    * Returns the set of configuration options that are supported in this module.
    */
   public ImmutableList<Class<? extends FragmentOptions>> getConfigurationOptions() {
@@ -713,8 +753,8 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
    * Returns the configuration fragment that should be available to all rules even when they
    * don't explicitly require it.
    */
-  public Class<? extends BuildConfiguration.Fragment> getUniversalFragment() {
-    return universalFragment;
+  public ImmutableList<Class<? extends BuildConfiguration.Fragment>> getUniversalFragments() {
+    return universalFragments;
   }
 
   /**
@@ -740,21 +780,17 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
   }
 
   private Environment.GlobalFrame createGlobals(
-      ImmutableMap<String, Object> skylarkAccessibleToplLevels,
+      ImmutableMap<String, Object> skylarkAccessibleTopLevels,
       ImmutableList<Class<?>> modules) {
-    try (Mutability mutability = Mutability.create("ConfiguredRuleClassProvider globals")) {
-      Environment env = createSkylarkRuleClassEnvironment(
-          mutability,
-          SkylarkModules.getGlobals(modules),
-          SkylarkSemantics.DEFAULT_SEMANTICS,
-          /*eventHandler=*/ null,
-          /*astFileContentHashCode=*/ null,
-          /*importMap=*/ null);
-      for (Map.Entry<String, Object> entry : skylarkAccessibleToplLevels.entrySet()) {
-        env.setup(entry.getKey(), entry.getValue());
-      }
-      return env.getGlobals();
+    ImmutableMap.Builder<String, Object> envBuilder = ImmutableMap.builder();
+
+    SkylarkModules.addSkylarkGlobalsToBuilder(envBuilder);
+    for (Class<?> module : modules) {
+      Runtime.setupModuleGlobals(envBuilder, module);
     }
+    envBuilder.putAll(skylarkAccessibleTopLevels.entrySet());
+
+    return GlobalFrame.createForBuiltins(envBuilder.build());
   }
 
   private static ImmutableMap<String, Class<?>> createFragmentMap(
@@ -762,9 +798,9 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
     ImmutableMap.Builder<String, Class<?>> mapBuilder = ImmutableMap.builder();
     for (ConfigurationFragmentFactory fragmentFactory : configurationFragmentFactories) {
       Class<? extends Fragment> fragmentClass = fragmentFactory.creates();
-      String fragmentName = SkylarkModule.Resolver.resolveName(fragmentClass);
-      if (fragmentName != null) {
-        mapBuilder.put(fragmentName, fragmentClass);
+      SkylarkModule fragmentModule = SkylarkInterfaceUtils.getSkylarkModule((fragmentClass));
+      if (fragmentModule != null) {
+        mapBuilder.put(fragmentModule.name(), fragmentClass);
       }
     }
     return mapBuilder.build();
@@ -836,15 +872,16 @@ public class ConfiguredRuleClassProvider implements RuleClassProvider {
     for (ConfigurationFragmentFactory factory : getConfigurationFragments()) {
       fragmentsBuilder.add(factory.creates());
     }
-    fragmentsBuilder.add(getUniversalFragment());
+    fragmentsBuilder.addAll(getUniversalFragments());
     return fragmentsBuilder.build();
   }
 
-  /**
-   * Returns all registered {@link NativeProvider} instances, i.e. all built-in provider types that
-   * are based on {@link Provider} rather than {@link TransitiveInfoProvider}.
-   */
-  public ImmutableList<NativeProvider> getNativeProviders() {
-    return nativeProviders;
+  /** Returns a reserved set of action mnemonics. These cannot be used from a Skylark action. */
+  public ImmutableSet<String> getReservedActionMnemonics() {
+    return reservedActionMnemonics;
+  }
+
+  public BuildConfiguration.ActionEnvironmentProvider getActionEnvironmentProvider() {
+    return actionEnvironmentProvider;
   }
 }

@@ -28,6 +28,7 @@ import com.google.devtools.build.lib.actions.Artifact.ArtifactExpander;
 import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
 import com.google.devtools.build.lib.actions.CommandLine;
 import com.google.devtools.build.lib.actions.CommandLineItem;
+import com.google.devtools.build.lib.actions.CommandLineItemSimpleFormatter;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.concurrent.BlazeInterners;
@@ -173,7 +174,7 @@ public final class CustomCommandLine extends CommandLine {
 
       private SimpleVectorArg(Builder builder, @Nullable Collection<T> values) {
         this(
-            false /* isNestedSet */,
+            /* isNestedSet= */ false,
             values == null || values.isEmpty(),
             values != null ? values.size() : 0,
             builder.formatEach,
@@ -184,9 +185,9 @@ public final class CustomCommandLine extends CommandLine {
 
       private SimpleVectorArg(Builder builder, @Nullable NestedSet<T> values) {
         this(
-            true /* isNestedSet */,
+            /* isNestedSet= */ true,
             values == null || values.isEmpty(),
-            -1 /* count */,
+            /* count= */ -1,
             builder.formatEach,
             builder.beforeEach,
             builder.joinWith,
@@ -208,7 +209,7 @@ public final class CustomCommandLine extends CommandLine {
       }
 
       /** Each argument is mapped using the supplied map function */
-      public MappedVectorArg<T> mapped(CommandLineItem.MapFn<T> mapFn) {
+      public MappedVectorArg<T> mapped(CommandLineItem.MapFn<? super T> mapFn) {
         return new MappedVectorArg<>(this, mapFn);
       }
     }
@@ -216,9 +217,9 @@ public final class CustomCommandLine extends CommandLine {
     /** A vector arg that maps some type T to strings. */
     static class MappedVectorArg<T> extends VectorArg<String> {
       private final Iterable<T> values;
-      private final CommandLineItem.MapFn<T> mapFn;
+      private final CommandLineItem.MapFn<? super T> mapFn;
 
-      private MappedVectorArg(SimpleVectorArg<T> other, CommandLineItem.MapFn<T> mapFn) {
+      private MappedVectorArg(SimpleVectorArg<T> other, CommandLineItem.MapFn<? super T> mapFn) {
         super(
             other.isNestedSet,
             other.isEmpty,
@@ -239,7 +240,7 @@ public final class CustomCommandLine extends CommandLine {
       return new Builder().each(values);
     }
 
-    /** Each argument is formatted via {@link String#format}. */
+    /** Each argument is formatted via {@link CommandLineItemSimpleFormatter#format}. */
     public static Builder format(@CompileTimeConstant String formatEach) {
       return new Builder().format(formatEach);
     }
@@ -259,7 +260,7 @@ public final class CustomCommandLine extends CommandLine {
       private String beforeEach;
       private String joinWith;
 
-      /** Each argument is formatted via {@link String#format}. */
+      /** Each argument is formatted via {@link CommandLineItemSimpleFormatter#format}. */
       public Builder format(@CompileTimeConstant String formatEach) {
         Preconditions.checkNotNull(formatEach);
         this.formatEach = formatEach;
@@ -402,7 +403,8 @@ public final class CustomCommandLine extends CommandLine {
         if (hasFormatEach) {
           String formatStr = (String) arguments.get(argi++);
           for (int i = 0; i < count; ++i) {
-            mutatedValues.set(i, String.format(formatStr, mutatedValues.get(i)));
+            mutatedValues.set(
+                i, CommandLineItemSimpleFormatter.format(formatStr, mutatedValues.get(i)));
           }
         }
         if (hasBeforeEach) {
@@ -487,8 +489,9 @@ public final class CustomCommandLine extends CommandLine {
     }
   }
 
-  private static class FormatArg implements ArgvFragment {
-    private static final FormatArg INSTANCE = new FormatArg();
+  @AutoCodec.VisibleForSerialization
+  static class FormatArg implements ArgvFragment {
+    @AutoCodec @AutoCodec.VisibleForSerialization static final FormatArg INSTANCE = new FormatArg();
     private static final UUID FORMAT_UUID = UUID.fromString("377cee34-e947-49e0-94a2-6ab95b396ec4");
 
     private static void push(List<Object> arguments, String formatStr, Object... args) {
@@ -526,8 +529,9 @@ public final class CustomCommandLine extends CommandLine {
     }
   }
 
-  private static class PrefixArg implements ArgvFragment {
-    private static final PrefixArg INSTANCE = new PrefixArg();
+  @AutoCodec.VisibleForSerialization
+  static class PrefixArg implements ArgvFragment {
+    @AutoCodec @AutoCodec.VisibleForSerialization static final PrefixArg INSTANCE = new PrefixArg();
     private static final UUID PREFIX_UUID = UUID.fromString("a95eccdf-4f54-46fc-b925-c8c7e1f50c95");
 
     private static void push(List<Object> arguments, String before, Object arg) {

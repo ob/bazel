@@ -1,9 +1,9 @@
 ---
 layout: documentation
-title: Extensions - Backward compatibility
+title: Backward Compatibility
 ---
 
-# Backward compatibility
+# Backward Compatibility
 
 Bazel is still in Beta and new releases may include backward incompatible
 changes. As we make changes and polish the extension mechanism, old features
@@ -30,32 +30,21 @@ To check if your code will be compatible with future releases you can:
 The following are the backward incompatible changes that are implemented and
 guarded behind flags in the current release:
 
-*   [Set constructor](#set-constructor)
 *   [Dictionary concatenation](#dictionary-concatenation)
 *   [Load must appear at top of file](#load-must-appear-at-top-of-file)
-*   [Top level `if` statements](#top-level-if-statements)
 *   [Depset is no longer iterable](#depset-is-no-longer-iterable)
 *   [Depset union](#depset-union)
 *   [String is no longer iterable](#string-is-no-longer-iterable)
+*   [Integer division operator is //](#integer-division-operator-is)
+*   [Package name is a function](#package-name-is-a-function)
+*   [FileType is deprecated](#filetype-is-deprecated)
 *   [New actions API](#new-actions-api)
+*   [New args API](#new-args-api)
 *   [Glob tracking](#glob-tracking)
-*   [Print statements](#print-statements)
-
-
-### Set constructor
-
-To maintain a clear distinction between the specialized [`depset`](depsets.md)
-data structure and Python's native `set` datatype (which does not currently
-exist in Skylark), the `set` constructor has been superseded by `depset`. It is
-no longer allowed to run code that calls the old `set` constructor.
-
-However, for a limited time, it will not be an error to reference the `set`
-constructor from code that is not executed (e.g. a function that is never
-called). Enable this flag to confirm that your code does not still refer to the
-old `set` constructor from unexecuted code.
-
-*   Flag: `--incompatible_disallow_uncalled_set_constructor`
-*   Default: `true`
+*   [Disable objc provider resources](#disable-objc-provider-resources)
+*   [Remove native git repository](#remove-native-git-repository)
+*   [Remove native http archive](#remove-native-http-archive)
+*   [New-style JavaInfo constructor](#new-style-java_info)
 
 
 ### Dictionary concatenation
@@ -76,17 +65,6 @@ appear at the beginning of the file, i.e. before any other non-`load` statement.
 
 *   Flag: `--incompatible_bzl_disallow_load_after_statement`
 *   Default: `false`
-
-
-### Top level `if` statements
-
-This change forbids `if` statements at the top level of `.bzl` files (they are
-already forbidden in `BUILD` files). This change ensures that every global
-value has a single declaration. This restriction is consistent with the idea
-that global values cannot be redefined.
-
-*   Flag: `--incompatible_disallow_toplevel_if_statement`
-*   Default: `true`
 
 
 ### Depset is no longer iterable
@@ -116,9 +94,9 @@ To merge two sets, the following examples used to be supported, but are now
 deprecated:
 
 ``` python
-depset1 + depset2
-depset1 | depset2
-depset1.union(depset2)
+depset1 + depset2  # deprecated
+depset1 | depset2  # deprecated
+depset1.union(depset2)  # deprecated
 ```
 
 The recommended solution is to use the `depset` constructor:
@@ -166,6 +144,47 @@ for i in range(len(my_string)):
 *   Default: `false`
 
 
+### Integer division operator is `//`
+
+Integer division operator is now `//` instead of `/`. This aligns with
+Python 3 and it highlights the fact it is a floor division.
+
+```python
+x = 7 / 2  # deprecated
+
+x = 7 // 2  # x is 3
+```
+
+*   Flag: `--incompatible_disallow_slash_operator`
+*   Default: `false`
+
+
+### Package name is a function
+
+The current package name should be retrieved by calling `package_name()` in
+BUILD files or `native.package_name()` in .bzl files. The old way of referring
+to the magic `PACKAGE_NAME` variable bends the language since it is neither a
+parameter, local variable, nor global variable.
+
+Likewise, the magic `REPOSITORY_NAME` variable is replaced by
+`repository_name()` and `native.repository_name()`. Both deprecations use the
+same flag.
+
+*   Flag: `--incompatible_package_name_is_a_function`
+*   Default: `false`
+
+
+### FileType is deprecated
+
+The [FileType](lib/FileType.html) function is going away. The main use-case was
+as an argument to the [rule function](lib/globals.html#rule). It's no longer
+needed, you can simply pass a list of strings to restrict the file types the
+rule accepts.
+
+*   Flag: `--incompatible_disallow_filetype`
+*   Default: `false`
+
+
 ### New actions API
 
 This change removes the old methods for registering actions within rules, and
@@ -187,6 +206,21 @@ replacements are as follows.
 *   Default: `false`
 
 
+### New args API
+
+The [Args](lib/Args.html) object returned by `ctx.actions.args()` has dedicated
+methods for appending the contents of a list or depset to the command line.
+Previously these use cases were lumped into its [`add()`](lib/Args.html#add)
+method, resulting in a more cluttered API.
+
+With this flag, `add()` only works for scalar values, and its deprecated
+parameters are disabled. To add many arguments at once you must use `add_all()`
+or `add_joined()` instead.
+
+*   Flag: `--incompatible_disallow_old_style_args_add`
+*   Default: `false`
+
+
 ### Glob tracking
 
 When set, glob tracking is disabled. This is a legacy feature that we expect has
@@ -196,16 +230,111 @@ no user-visible impact.
 *   Default: `true`
 
 
-### Print statements
+### Disable objc provider resources
 
-`print` statements in Skylark code are supposed to be used for debugging only.
-Messages they yield used to be filtered out so that only messages from the same
-package as the top level target being built were shown by default (it was
-possible to override by providing, for example, `--output_filter=`). That made
-debugging hard. When the flag is set to true, all print messages are shown in
-the console without exceptions.
+This flag disables certain deprecated resource fields on
+[ObjcProvider](lib/ObjcProvider.html).
 
-*   Flag: `--incompatible_show_all_print_messages`
-*   Default: `true`
+*   Flag: `--incompatible_objc_provider_resources`
+*   Default: `false`
+
+
+### Remove native git repository
+
+When set, the native `git_repository` rule is disabled. The Skylark version
+
+```python
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+```
+
+should be used instead.
+
+*   Flag: `--incompatible_remove_native_git_repository`
+*   Default: `false`
+
+
+### Remove native http archive
+
+When set, the native `http_archive` rule is disabled. The skylark version
+
+```python
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+```
+
+should be used instead.
+
+*   Flag: `--incompatible_remove_native_http_archive`
+*   Default: `false`
+
+### New-style JavaInfo constructor
+
+When set, `java_common.create_provider` and certain arguments to `JavaInfo` are deprecated. The
+deprecated arguments are: `actions`, `sources`, `source_jars`, `use_ijar`, `java_toolchain`,
+and `host_javabase`.
+
+Example migration from `create_provider`:
+
+```python
+# Before
+provider = java_common.create_provider(
+    ctx.actions,
+    compile_time_jars = [output_jar],
+    use_ijar = True,
+    java_toolchain = ctx.attr._java_toolchain,
+    transitive_compile_time_jars = transitive_compile_time,
+    transitive_runtime_jars = transitive_runtime_jars,
+)
+
+# After
+compile_jar = java_common.run_ijar(
+    ctx.actions,
+    jar = output_jar,
+    target_label = ctx.label,
+    java_toolchain = ctx.attr._java_toolchain,
+)
+provider = JavaInfo(
+    output_jar = output_jar,
+    compile_jar = compile_jar,
+    deps = deps,
+    runtime_deps = runtime_deps,
+)
+```
+
+Example migration from deprecated `JavaInfo` arguments:
+
+```python
+# Before
+provider = JavaInfo(
+  output_jar = my_jar,
+  use_ijar = True,
+  sources = my_sources,
+  deps = my_compile_deps,
+  runtime_deps = my_runtime_deps,
+  actions = ctx.actions,
+  java_toolchain = my_java_toolchain,
+  host_javabase = my_host_javabase,
+)
+
+# After
+my_ijar = java_common.run_ijar(
+  ctx.actions,
+  jar = my_jar,
+  target_label = ctx.label,
+  java_toolchain, my_java_toolchain,
+)
+my_source_jar = java_common.pack_sources(
+  ctx.actions,
+  sources = my_sources,
+  java_toolchain = my_java_toolchain,
+  host_javabase = my_host_javabase,
+)
+provider = JavaInfo(
+  output_jar = my_jar,
+  compile_jar = my_ijar,
+  source_jar = my_source_jar,
+  deps = my_compile_deps,
+  runtime_deps = my_runtime_deps,
+)
+```
 
 <!-- Add new options here -->

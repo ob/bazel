@@ -46,15 +46,13 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.packages.util.MockCcSupport;
 import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Variables.VariableValue;
+import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.VariableValue;
 import com.google.devtools.build.lib.rules.cpp.CppActionConfigs.CppPlatform;
-import com.google.devtools.build.lib.rules.cpp.Link.LinkStaticness;
 import com.google.devtools.build.lib.rules.cpp.Link.LinkTargetType;
-import com.google.devtools.build.lib.rules.cpp.Link.Staticness;
+import com.google.devtools.build.lib.rules.cpp.Link.LinkerOrArchiver;
 import com.google.devtools.build.lib.rules.cpp.LinkerInputs.LibraryToLink;
 import com.google.devtools.build.lib.testutil.TestUtils;
 import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.OsUtils;
 import com.google.devtools.build.lib.util.Pair;
 import com.google.devtools.build.lib.vfs.FileSystem;
 import com.google.devtools.build.lib.vfs.Path;
@@ -180,8 +178,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
     scratch.file("x/some-other-dir/qux.so");
 
     ConfiguredTarget configuredTarget = getConfiguredTarget("//x:foo");
-    CppLinkAction linkAction = (CppLinkAction) getGeneratingAction(configuredTarget, "x/foo"
-        + OsUtils.executableExtension());
+    CppLinkAction linkAction = (CppLinkAction) getGeneratingAction(configuredTarget, "x/foo");
 
     List<String> arguments = linkAction.getLinkCommandLine().arguments();
 
@@ -207,13 +204,14 @@ public class CppLinkActionTest extends BuildViewTestCase {
     ConfiguredTarget configuredTarget = getConfiguredTarget("//x:foo");
     CppLinkAction linkAction =
         (CppLinkAction)
-            getGeneratingAction(configuredTarget, "x/foo" + OsUtils.executableExtension());
+            getGeneratingAction(configuredTarget, "x/foo");
 
     Iterable<? extends VariableValue> runtimeLibrarySearchDirectories =
         linkAction
             .getLinkCommandLine()
             .getBuildVariables()
-            .getSequenceVariable(CppLinkActionBuilder.RUNTIME_LIBRARY_SEARCH_DIRECTORIES_VARIABLE);
+            .getSequenceVariable(
+                LinkBuildVariables.RUNTIME_LIBRARY_SEARCH_DIRECTORIES.getVariableName());
     List<String> directories = new ArrayList<>();
     for (VariableValue value : runtimeLibrarySearchDirectories) {
       directories.add(value.getStringValue("runtime_library_search_directory"));
@@ -238,9 +236,8 @@ public class CppLinkActionTest extends BuildViewTestCase {
 
     ConfiguredTarget configuredTarget = getConfiguredTarget("//x:a");
     String cpu = CrosstoolConfigurationHelper.defaultCpu();
-    String extension = OsUtils.executableExtension();
     CppLinkAction linkAction =
-        (CppLinkAction) getGeneratingAction(configuredTarget, "x/a" + extension);
+        (CppLinkAction) getGeneratingAction(configuredTarget, "x/a");
     assertThat(artifactsToStrings(linkAction.getInputs()))
         .contains("bin _solib_" + cpu + "/libx_Sliba.ifso");
     assertThat(linkAction.getArguments())
@@ -251,7 +248,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
         .contains("bin _solib_" + cpu + "/libx_Sliba.so");
 
     configuredTarget = getConfiguredTarget("//x:b");
-    linkAction = (CppLinkAction) getGeneratingAction(configuredTarget, "x/b" + extension);
+    linkAction = (CppLinkAction) getGeneratingAction(configuredTarget, "x/b");
     assertThat(artifactsToStrings(linkAction.getInputs())).contains("bin x/_objs/b/x/a.pic.o");
     runfilesProvider = configuredTarget.getProvider(RunfilesProvider.class);
     assertThat(artifactsToStrings(runfilesProvider.getDefaultRunfiles().getArtifacts()))
@@ -281,7 +278,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
                 ImmutableList.<LibraryToLink>of(),
                 featureConfiguration)
             .build();
-    assertThat(linkAction.getEnvironment()).containsEntry("foo", "bar");
+    assertThat(linkAction.getIncompleteEnvironmentForTesting()).containsEntry("foo", "bar");
   }
 
   private enum NonStaticAttributes {
@@ -328,12 +325,12 @@ public class CppLinkActionTest extends BuildViewTestCase {
             } else {
               builder.setLinkType(LinkTargetType.EXECUTABLE);
             }
-            builder.setLinkStaticness(LinkStaticness.DYNAMIC);
+            builder.setLinkingMode(Link.LinkingMode.DYNAMIC);
             builder.setNativeDeps(attributesToFlip.contains(NonStaticAttributes.NATIVE_DEPS));
             builder.setUseTestOnlyFlags(
                 attributesToFlip.contains(NonStaticAttributes.USE_TEST_ONLY_FLAGS));
             builder.setFake(attributesToFlip.contains(NonStaticAttributes.FAKE));
-            builder.setRuntimeSolibDir(
+            builder.setToolchainLibrariesSolibDir(
                 attributesToFlip.contains(NonStaticAttributes.RUNTIME_SOLIB_DIR)
                     ? null
                     : PathFragment.create("so1"));
@@ -466,7 +463,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
     assertThat(resources.getIoUsage())
         .isAtLeast(CppLinkAction.MIN_STATIC_LINK_RESOURCES.getIoUsage());
 
-    final int linkSize = Iterables.size(linkAction.getLinkCommandLine().getLinkerInputs());
+    final int linkSize = Iterables.size(linkAction.getLinkCommandLine().getLinkerInputArtifacts());
     ResourceSet scaledSet = ResourceSet.createWithRamCpuIo(
         CppLinkAction.LINK_RESOURCES_PER_INPUT.getMemoryMb() * linkSize,
         CppLinkAction.LINK_RESOURCES_PER_INPUT.getCpuUsage() * linkSize,
@@ -506,10 +503,10 @@ public class CppLinkActionTest extends BuildViewTestCase {
             .addLibraries(NestedSetBuilder.wrap(Order.LINK_ORDER, libraryInputs))
             .setLinkType(type)
             .setCrosstoolInputs(NestedSetBuilder.<Artifact>emptySet(Order.STABLE_ORDER))
-            .setLinkStaticness(
-                type.staticness() == Staticness.STATIC
-                    ? LinkStaticness.FULLY_STATIC
-                    : LinkStaticness.MOSTLY_STATIC);
+            .setLinkingMode(
+                type.linkerOrArchiver() == LinkerOrArchiver.ARCHIVER
+                    ? Link.LinkingMode.LEGACY_FULLY_STATIC
+                    : Link.LinkingMode.STATIC);
     return builder;
   }
 
@@ -626,7 +623,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
   public void testStaticLinkWithDynamicIsError() throws Exception {
     CppLinkActionBuilder builder =
         createLinkBuilder(LinkTargetType.STATIC_LIBRARY)
-            .setLinkStaticness(LinkStaticness.DYNAMIC)
+            .setLinkingMode(Link.LinkingMode.DYNAMIC)
             .setLibraryIdentifier("foo");
 
     assertError("static library link must be static", builder);
@@ -636,7 +633,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
   public void testStaticLinkWithSymbolsCountOutputIsError() throws Exception {
     CppLinkActionBuilder builder =
         createLinkBuilder(LinkTargetType.STATIC_LIBRARY)
-            .setLinkStaticness(LinkStaticness.FULLY_STATIC)
+            .setLinkingMode(Link.LinkingMode.LEGACY_FULLY_STATIC)
             .setLibraryIdentifier("foo")
             .setSymbolCountsOutput(scratchArtifact("dummySymbolCounts"));
 
@@ -647,7 +644,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
   public void testStaticLinkWithNativeDepsIsError() throws Exception {
     CppLinkActionBuilder builder =
         createLinkBuilder(LinkTargetType.STATIC_LIBRARY)
-            .setLinkStaticness(LinkStaticness.FULLY_STATIC)
+            .setLinkingMode(Link.LinkingMode.LEGACY_FULLY_STATIC)
             .setLibraryIdentifier("foo")
             .setNativeDeps(true);
 
@@ -658,7 +655,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
   public void testStaticLinkWithWholeArchiveIsError() throws Exception {
     CppLinkActionBuilder builder =
         createLinkBuilder(LinkTargetType.STATIC_LIBRARY)
-            .setLinkStaticness(LinkStaticness.FULLY_STATIC)
+            .setLinkingMode(Link.LinkingMode.LEGACY_FULLY_STATIC)
             .setLibraryIdentifier("foo")
             .setWholeArchive(true);
 
@@ -809,7 +806,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
     for (LinkTargetType linkType : targetTypesToTest) {
 
       scratch.deleteFile("dummyRuleContext/BUILD");
-      Artifact output = scratchArtifact("output." + linkType.getExtension());
+      Artifact output = scratchArtifact("output." + linkType.getDefaultExtension());
 
       CppLinkActionBuilder builder =
           createLinkBuilder(
@@ -844,7 +841,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
                 ImmutableList.of(),
                 ImmutableList.of(),
                 getMockFeatureConfiguration())
-            .setLinkStaticness(LinkStaticness.MOSTLY_STATIC)
+            .setLinkingMode(Link.LinkingMode.STATIC)
             .addLinkopts(ImmutableList.of("-pie", "-other", "-pie"))
             .setLibraryIdentifier("foo")
             .build();
@@ -864,7 +861,7 @@ public class CppLinkActionTest extends BuildViewTestCase {
                 ImmutableList.of(),
                 ImmutableList.of(),
                 getMockFeatureConfiguration())
-            .setLinkStaticness(LinkStaticness.MOSTLY_STATIC)
+            .setLinkingMode(Link.LinkingMode.STATIC)
             .addLinkopts(ImmutableList.of("-pie", "-other", "-pie"))
             .build();
 

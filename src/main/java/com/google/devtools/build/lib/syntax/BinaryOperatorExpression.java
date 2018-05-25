@@ -15,7 +15,6 @@ package com.google.devtools.build.lib.syntax;
 
 import com.google.common.base.Strings;
 import com.google.devtools.build.lib.events.Location;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.syntax.Concatable.Concatter;
 import com.google.devtools.build.lib.syntax.SkylarkList.MutableList;
 import com.google.devtools.build.lib.syntax.SkylarkList.Tuple;
@@ -23,7 +22,6 @@ import java.io.IOException;
 import java.util.IllegalFormatException;
 
 /** Syntax node for a binary operator expression. */
-@AutoCodec
 public final class BinaryOperatorExpression extends Expression {
 
   private final Expression lhs;
@@ -207,6 +205,15 @@ public final class BinaryOperatorExpression extends Expression {
           return mult(lhs, rhs, env, location);
 
         case DIVIDE:
+          if (env.getSemantics().incompatibleDisallowSlashOperator()) {
+            throw new EvalException(
+                location,
+                "The `/` operator has been removed. Please use the `//` operator for integer "
+                    + "division. You can temporarily enable the `/` operator by passing "
+                    + "the flag --incompatible_disallow_slash_operator=false");
+          }
+          return divide(lhs, rhs, location);
+
         case FLOOR_DIVIDE:
           return divide(lhs, rhs, location);
 
@@ -331,7 +338,7 @@ public final class BinaryOperatorExpression extends Expression {
                 + "recommendations. Use --incompatible_depset_union=false "
                 + "to temporarily disable this check.");
       }
-      return new SkylarkNestedSet((SkylarkNestedSet) lval, rval, location);
+      return SkylarkNestedSet.of((SkylarkNestedSet) lval, rval, location);
     }
     throw typeException(lval, rval, Operator.PLUS, location);
   }
@@ -348,7 +355,7 @@ public final class BinaryOperatorExpression extends Expression {
                 + "recommendations. Use --incompatible_depset_union=false "
                 + "to temporarily disable this check.");
       }
-      return new SkylarkNestedSet((SkylarkNestedSet) lval, rval, location);
+      return SkylarkNestedSet.of((SkylarkNestedSet) lval, rval, location);
     }
     throw typeException(lval, rval, Operator.PIPE, location);
   }

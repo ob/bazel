@@ -17,43 +17,51 @@ package com.google.devtools.build.lib.skyframe.serialization;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.devtools.build.lib.skyframe.serialization.Memoizer.Serializer;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs.MemoizationPermission;
 import com.google.devtools.build.lib.skyframe.serialization.SerializationException.NoCodecException;
+import com.google.devtools.build.lib.util.BazelCrashUtils;
 import com.google.protobuf.CodedOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 
 /**
  * Stateful class for providing additional context to a single serialization "session". This class
- * is thread-safe so long as {@link #serializer} is null. If it is not null, this class is not
- * thread-safe and should only be accessed on a single thread for serializing one object (that may
- * involve serializing other objects contained in it).
+ * is thread-safe so long as {@link #serializer} is null (which also implies that {@link
+ * #allowFuturesToBlockWritingOn) is false). If it is not null, this class is not thread-safe and
+ * should only be accessed on a single thread for serializing one object (that may involve
+ * serializing other objects contained in it).
  */
 public class SerializationContext {
   private final ObjectCodecRegistry registry;
   private final ImmutableMap<Class<?>, Object> dependencies;
-  private final MemoizationPermission memoizationPermission;
   @Nullable private final Memoizer.Serializer serializer;
+  /** Initialized lazily. */
+  @Nullable private List<ListenableFuture<Void>> futuresToBlockWritingOn;
+
+  private final boolean allowFuturesToBlockWritingOn;
 
   private SerializationContext(
       ObjectCodecRegistry registry,
       ImmutableMap<Class<?>, Object> dependencies,
-      MemoizationPermission memoizationPermission,
-      @Nullable Serializer serializer) {
+      @Nullable Serializer serializer,
+      boolean allowFuturesToBlockWritingOn) {
     this.registry = registry;
     this.dependencies = dependencies;
     this.serializer = serializer;
-    this.memoizationPermission = memoizationPermission;
-    Preconditions.checkState(
-        serializer == null || memoizationPermission == MemoizationPermission.ALLOWED);
+    this.allowFuturesToBlockWritingOn = allowFuturesToBlockWritingOn;
   }
 
   @VisibleForTesting
   public SerializationContext(
       ObjectCodecRegistry registry, ImmutableMap<Class<?>, Object> dependencies) {
-    this(registry, dependencies, MemoizationPermission.ALLOWED, /*serializer=*/ null);
+    this(registry, dependencies, /*serializer=*/ null, /*allowFuturesToBlockWritingOn=*/ false);
   }
 
   @VisibleForTesting
@@ -61,28 +69,110 @@ public class SerializationContext {
     this(AutoRegistry.get(), dependencies);
   }
 
-  SerializationContext disableMemoization() {
-    Preconditions.checkState(
-        memoizationPermission == MemoizationPermission.ALLOWED, "memoization already disabled");
-    Preconditions.checkState(serializer == null, "serializer already present");
-    return new SerializationContext(
-        registry, dependencies, MemoizationPermission.DISABLED, serializer);
+  // TODO(shahan): consider making codedOut a member of this class.
+  public void serialize(Object object, CodedOutputStream codedOut)
+      throws IOException, SerializationException {
+    ObjectCodecRegistry.CodecDescriptor descriptor =
+        recordAndGetDescriptorIfNotConstantMemoizedOrNull(object, codedOut);
+    if (descriptor != null) {
+      if (serializer == null) {
+        descriptor.serialize(this, object, codedOut);
+      } else {
+        @SuppressWarnings("unchecked")
+        ObjectCodec<Object> castCodec = (ObjectCodec<Object>) descriptor.getCodec();
+        serializer.serialize(this, object, castCodec, codedOut);
+      }
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  public <T> T getDependency(Class<T> type) {
+    Preconditions.checkNotNull(type);
+    return (T) dependencies.get(type);
   }
 
   /**
    * Returns a {@link SerializationContext} that will memoize values it encounters (using reference
    * equality) in a new memoization table. The returned context should be used instead of the
    * original: memoization may only occur when using the returned context. Calls must be in pairs
-   * with {@link DeserializationContext#newMemoizingContext} in the corresponding deserialization
-   * code. Over-eagerly calling this method will reduce the effectiveness of memoization, since any
-   * previous memo state is inaccessible to the new context.
+   * with {@link DeserializationContext#getMemoizingContext} in the corresponding deserialization
+   * code.
+   *
+   * <p>This method is idempotent: calling it on an already memoizing context will return the same
+   * context.
    */
   @CheckReturnValue
-  public SerializationContext newMemoizingContext() {
+  public SerializationContext getMemoizingContext() {
+    if (serializer != null) {
+      return this;
+    }
+    return getNewMemoizingContext(/*allowFuturesToBlockWritingOn=*/ false);
+  }
+
+  @CheckReturnValue
+  SerializationContext getMemoizingAndBlockingOnWriteContext() {
     Preconditions.checkState(
-        memoizationPermission == MemoizationPermission.ALLOWED, "memoization disabled");
+        serializer == null, "Should only be called on base serializationContext");
+    Preconditions.checkState(
+        !allowFuturesToBlockWritingOn, "Should only be called on base serializationContext");
+    return getNewMemoizingContext(/*allowFuturesToBlockWritingOn=*/ true);
+  }
+
+  /**
+   * Returns a memoizing {@link SerializationContext}, as getMemoizingContext above. Unlike
+   * getMemoizingContext, this method is not idempotent - the returned context will always be fresh.
+   */
+  public SerializationContext getNewMemoizingContext() {
+    return getNewMemoizingContext(allowFuturesToBlockWritingOn);
+  }
+
+  private SerializationContext getNewMemoizingContext(boolean allowFuturesToBlockWritingOn) {
     return new SerializationContext(
-        this.registry, this.dependencies, memoizationPermission, new Memoizer.Serializer());
+        this.registry, this.dependencies, new Memoizer.Serializer(), allowFuturesToBlockWritingOn);
+  }
+
+  public SerializationContext getNewNonMemoizingContext() {
+    return new SerializationContext(
+        this.registry, this.dependencies, null, this.allowFuturesToBlockWritingOn);
+  }
+
+  /**
+   * Register a {@link ListenableFuture} that must complete successfully before the serialized bytes
+   * generated using this context can be written remotely. Failure of the future implies a bug or
+   * other unrecoverable error that should crash this JVM.
+   */
+  public void addFutureToBlockWritingOn(ListenableFuture<Void> future) {
+    Preconditions.checkState(allowFuturesToBlockWritingOn, "This context cannot block on a future");
+    if (futuresToBlockWritingOn == null) {
+      futuresToBlockWritingOn = new ArrayList<>();
+    }
+    Futures.addCallback(future, crashTerminatingCallback, MoreExecutors.directExecutor());
+    futuresToBlockWritingOn.add(future);
+  }
+
+  private static final FutureCallback<Void> crashTerminatingCallback =
+      new FutureCallback<Void>() {
+        @Override
+        public void onSuccess(@Nullable Void result) {
+          // Do nothing.
+        }
+
+        @Override
+        public void onFailure(Throwable t) {
+          throw BazelCrashUtils.halt(t);
+        }
+      };
+
+  /**
+   * Creates a future that succeeds when all futures stored in this context via {@link
+   * #addFutureToBlockWritingOn} have succeeded, or null if no such futures were stored.
+   */
+  @Nullable
+  public ListenableFuture<Void> createFutureToBlockWritingOn() {
+    return futuresToBlockWritingOn != null
+        ? Futures.whenAllSucceed(futuresToBlockWritingOn)
+            .call(() -> null, MoreExecutors.directExecutor())
+        : null;
   }
 
   private boolean writeNullOrConstant(@Nullable Object object, CodedOutputStream codedOut)
@@ -100,35 +190,21 @@ public class SerializationContext {
   }
 
   @Nullable
-  private ObjectCodecRegistry.CodecDescriptor recordAndGetDescriptorIfNotConstantOrNull(
+  private ObjectCodecRegistry.CodecDescriptor recordAndGetDescriptorIfNotConstantMemoizedOrNull(
       @Nullable Object object, CodedOutputStream codedOut) throws IOException, NoCodecException {
     if (writeNullOrConstant(object, codedOut)) {
       return null;
     }
-    ObjectCodecRegistry.CodecDescriptor descriptor = registry.getCodecDescriptor(object.getClass());
-    codedOut.writeSInt32NoTag(descriptor.getTag());
-    return descriptor;
-  }
-
-  // TODO(shahan): consider making codedOut a member of this class.
-  public void serialize(Object object, CodedOutputStream codedOut)
-      throws IOException, SerializationException {
-    ObjectCodecRegistry.CodecDescriptor descriptor =
-        recordAndGetDescriptorIfNotConstantOrNull(object, codedOut);
-    if (descriptor != null) {
-      if (serializer == null) {
-        descriptor.serialize(this, object, codedOut);
-      } else {
-        @SuppressWarnings("unchecked")
-        ObjectCodec<Object> castCodec = (ObjectCodec<Object>) descriptor.getCodec();
-        serializer.serialize(this, object, castCodec, codedOut);
+    if (serializer != null) {
+      Integer memoizedIndex = serializer.getMemoizedIndex(object);
+      if (memoizedIndex != null) {
+        // Subtract 1 so it will be negative and not collide with null.
+        codedOut.writeSInt32NoTag(-memoizedIndex - 1);
+        return null;
       }
     }
-    }
-
-  @SuppressWarnings("unchecked")
-  public <T> T getDependency(Class<T> type) {
-    Preconditions.checkNotNull(type);
-    return (T) dependencies.get(type);
+    ObjectCodecRegistry.CodecDescriptor descriptor = registry.getCodecDescriptorForObject(object);
+    codedOut.writeSInt32NoTag(descriptor.getTag());
+    return descriptor;
   }
 }

@@ -195,8 +195,14 @@ public class EvaluationTest extends EvaluationTestCase {
   }
 
   @Test
+  public void testSlashOperatorIsForbidden() throws Exception {
+    newTest("--incompatible_disallow_slash_operator=true")
+        .testIfErrorContains("The `/` operator has been removed.", "5 / 2");
+  }
+
+  @Test
   public void testDivision() throws Exception {
-    newTest()
+    newTest("--incompatible_disallow_slash_operator=false")
         .testStatement("6 / 2", 3)
         .testStatement("6 / 4", 1)
         .testStatement("3 / 6", 0)
@@ -461,9 +467,9 @@ public class EvaluationTest extends EvaluationTestCase {
         .testStatement("[    ] * 10", MutableList.empty())
         .testStatement("[1, 2] * 0", MutableList.empty())
         .testStatement("[1, 2] * -4", MutableList.empty())
-        .testStatement(" 2 * [1, 2]", MutableList.of(env, 1, 2, 1, 2))
+        .testStatement("2 * [1, 2]", MutableList.of(env, 1, 2, 1, 2))
         .testStatement("10 * []", MutableList.empty())
-        .testStatement(" 0 * [1, 2]", MutableList.empty())
+        .testStatement("0 * [1, 2]", MutableList.empty())
         .testStatement("-4 * [1, 2]", MutableList.empty());
   }
 
@@ -478,9 +484,9 @@ public class EvaluationTest extends EvaluationTestCase {
         .testStatement("(    ) * 10", Tuple.empty())
         .testStatement("(1, 2) * 0", Tuple.empty())
         .testStatement("(1, 2) * -4", Tuple.empty())
-        .testStatement(" 2 * (1, 2)", Tuple.of(1, 2, 1, 2))
+        .testStatement("2 * (1, 2)", Tuple.of(1, 2, 1, 2))
         .testStatement("10 * ()", Tuple.empty())
-        .testStatement(" 0 * (1, 2)", Tuple.empty())
+        .testStatement("0 * (1, 2)", Tuple.empty())
         .testStatement("-4 * (1, 2)", Tuple.empty());
   }
 
@@ -667,12 +673,14 @@ public class EvaluationTest extends EvaluationTestCase {
   @Test
   public void testDictKeysTooManyArgs() throws Exception {
     newTest().testIfExactError(
-        "too many (2) positional arguments in call to keys(self: dict)", "{'a': 1}.keys('abc')");
+        "expected no more than 0 positional arguments, but got 1, "
+            + "in method call keys(string) of 'dict'", "{'a': 1}.keys('abc')");
   }
 
   @Test
   public void testDictKeysTooManyKeyArgs() throws Exception {
-    newTest().testIfExactError("unexpected keyword 'arg' in call to keys(self: dict)",
+    newTest().testIfExactError(
+        "unexpected keyword 'arg', in method call keys(string arg) of 'dict'",
         "{'a': 1}.keys(arg='abc')");
   }
 
@@ -685,8 +693,8 @@ public class EvaluationTest extends EvaluationTestCase {
   @Test
   public void testArgBothPosKey() throws Exception {
     newTest().testIfErrorContains(
-        "arguments 'old', 'new' passed both by position and by name "
-        + "in call to replace(self: string, ",
-        "'banana'.replace('a', 'o', 3, old='a', new=4)");
+        "got multiple values for keyword argument 'old', "
+            + "in method call replace(string, string, int, string old) of 'string'",
+        "'banana'.replace('a', 'o', 3, old='a')");
   }
 }

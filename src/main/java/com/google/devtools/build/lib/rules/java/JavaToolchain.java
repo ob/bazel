@@ -18,7 +18,6 @@ import static com.google.common.base.Strings.isNullOrEmpty;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.devtools.build.lib.actions.Artifact;
@@ -66,7 +65,8 @@ public class JavaToolchain implements RuleConfiguredTargetFactory {
     Artifact javac = ruleContext.getPrerequisiteArtifact("javac", Mode.HOST);
     FilesToRunProvider javabuilder =
         ruleContext.getExecutablePrerequisite("javabuilder", Mode.HOST);
-    Artifact headerCompiler = ruleContext.getPrerequisiteArtifact("header_compiler", Mode.HOST);
+    FilesToRunProvider headerCompiler =
+        ruleContext.getExecutablePrerequisite("header_compiler", Mode.HOST);
     boolean forciblyDisableHeaderCompilation =
         ruleContext.attributes().get("forcibly_disable_header_compilation", Type.BOOLEAN);
     Artifact singleJar = ruleContext.getPrerequisiteArtifact("singlejar", Mode.HOST);
@@ -131,7 +131,7 @@ public class JavaToolchain implements RuleConfiguredTargetFactory {
   }
 
   private ImmutableList<String> getJavacOpts(RuleContext ruleContext) {
-    Builder<String> javacopts = ImmutableList.builder();
+    ImmutableList.Builder<String> javacopts = ImmutableList.builder();
     String source = ruleContext.attributes().get("source_version", Type.STRING);
     if (!isNullOrEmpty(source)) {
       javacopts.add("-source").add(source);

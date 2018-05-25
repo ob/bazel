@@ -19,7 +19,6 @@ import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.Fragment;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.LabelConverter;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.ConfigurationEnvironment;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
 import com.google.devtools.build.lib.analysis.config.FragmentOptions;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
@@ -62,12 +61,12 @@ public class BazelPythonConfiguration extends BuildConfiguration.Fragment {
     @Option(
       name = "python2_path",
       defaultValue = "python",
-      category = "version",
       documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
       effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
-      metadataTags = { OptionMetadataTag.DEPRECATED },
-      help = "Local path to the Python2 executable. "
-                + "Deprecated, please use python_path or python_top instead."
+      metadataTags = {OptionMetadataTag.DEPRECATED},
+      help =
+          "Local path to the Python2 executable. "
+              + "Deprecated, please use python_path or python_top instead."
     )
     public String python2Path;
 
@@ -75,35 +74,31 @@ public class BazelPythonConfiguration extends BuildConfiguration.Fragment {
       name = "python3_path",
       converter = Python3PathConverter.class,
       defaultValue = "auto",
-      category = "version",
       documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
       effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
-      metadataTags = { OptionMetadataTag.DEPRECATED },
-      help = "Local path to the Python3 executable. "
-                + "Deprecated, please use python_path or python_top instead."
+      metadataTags = {OptionMetadataTag.DEPRECATED},
+      help =
+          "Local path to the Python3 executable. "
+              + "Deprecated, please use python_path or python_top instead."
     )
     public String python3Path;
 
     @Option(
-        name = "python_top",
-        converter = LabelConverter.class,
-        defaultValue = "null",
-        category = "version",
-        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-        effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
-        help =
-            "The label of py_runtime rule used for the Python interpreter invoked by Bazel."
+      name = "python_top",
+      converter = LabelConverter.class,
+      defaultValue = "null",
+      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
+      help = "The label of py_runtime rule used for the Python interpreter invoked by Bazel."
     )
     public Label pythonTop;
 
     @Option(
-        name = "python_path",
-        defaultValue = "python",
-        category = "version",
-        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
-        effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
-        help =
-            "The absolute path of the Python interpreter invoked by Bazel."
+      name = "python_path",
+      defaultValue = "python",
+      documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
+      help = "The absolute path of the Python interpreter invoked by Bazel."
     )
     public String pythonPath;
 
@@ -130,7 +125,7 @@ public class BazelPythonConfiguration extends BuildConfiguration.Fragment {
    */
   public static final class Loader implements ConfigurationFragmentFactory {
     @Override
-    public Fragment create(ConfigurationEnvironment env, BuildOptions buildOptions)
+    public Fragment create(BuildOptions buildOptions)
         throws InvalidConfigurationException {
       BazelPythonConfiguration pythonConfiguration
           = new BazelPythonConfiguration(buildOptions.get(Options.class));

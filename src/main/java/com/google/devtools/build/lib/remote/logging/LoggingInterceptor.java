@@ -14,9 +14,17 @@
 
 package com.google.devtools.build.lib.remote.logging;
 
+import com.google.bytestream.ByteStreamGrpc;
+import com.google.devtools.build.lib.clock.Clock;
 import com.google.devtools.build.lib.remote.logging.RemoteExecutionLog.LogEntry;
 import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
+import com.google.devtools.build.lib.util.io.AsynchronousFileOutputStream;
+import com.google.devtools.remoteexecution.v1test.ActionCacheGrpc;
+import com.google.devtools.remoteexecution.v1test.ContentAddressableStorageGrpc;
+import com.google.devtools.remoteexecution.v1test.ExecutionGrpc;
 import com.google.devtools.remoteexecution.v1test.RequestMetadata;
+import com.google.protobuf.Timestamp;
+import com.google.watcher.v1.WatcherGrpc;
 import io.grpc.CallOptions;
 import io.grpc.Channel;
 import io.grpc.ClientCall;
@@ -26,10 +34,19 @@ import io.grpc.ForwardingClientCallListener;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
 import io.grpc.Status;
+import java.time.Instant;
 import javax.annotation.Nullable;
 
 /** Client interceptor for logging details of certain gRPC calls. */
 public class LoggingInterceptor implements ClientInterceptor {
+  private final AsynchronousFileOutputStream rpcLogFile;
+  private final Clock clock;
+
+  /** Constructs a LoggingInterceptor which logs RPC calls to the given file. */
+  public LoggingInterceptor(AsynchronousFileOutputStream rpcLogFile, Clock clock) {
+    this.rpcLogFile = rpcLogFile;
+    this.clock = clock;
+  }
 
   /**
    * Returns a {@link LoggingHandler} to handle logging details for the specified method. If there
@@ -37,9 +54,22 @@ public class LoggingInterceptor implements ClientInterceptor {
    *
    * @param method Method to return handler for.
    */
-  protected <ReqT, RespT> @Nullable LoggingHandler<ReqT, RespT> selectHandler(
+  @SuppressWarnings("rawtypes")
+  protected <ReqT, RespT> @Nullable LoggingHandler selectHandler(
       MethodDescriptor<ReqT, RespT> method) {
-    // TODO(cdlee): add handlers for methods
+    if (method == ExecutionGrpc.getExecuteMethod()) {
+      return new ExecuteHandler();
+    } else if (method == WatcherGrpc.getWatchMethod()) {
+      return new WatchHandler();
+    } else if (method == ActionCacheGrpc.getGetActionResultMethod()) {
+      return new GetActionResultHandler();
+    } else if (method == ContentAddressableStorageGrpc.getFindMissingBlobsMethod()) {
+      return new FindMissingBlobsHandler();
+    } else if (method == ByteStreamGrpc.getReadMethod()) {
+      return new ReadHandler();
+    } else if (method == ByteStreamGrpc.getWriteMethod()) {
+      return new WriteHandler();
+    }
     return null;
   }
 
@@ -55,10 +85,20 @@ public class LoggingInterceptor implements ClientInterceptor {
     }
   }
 
+  /** Get current time as a Timestamp. */
+  private Timestamp getCurrentTimestamp() {
+    Instant time = Instant.ofEpochMilli(clock.currentTimeMillis());
+    return Timestamp.newBuilder()
+        .setSeconds(time.getEpochSecond())
+        .setNanos(time.getNano())
+        .build();
+  }
+
   /**
-   * Wraps client call to log call details by building a {@link LogEntry} and writing it to a log.
+   * Wraps client call to log call details by building a {@link LogEntry} and writing it to the RPC
+   * log file.
    */
-  private static class LoggingForwardingCall<ReqT, RespT>
+  private class LoggingForwardingCall<ReqT, RespT>
       extends ForwardingClientCall.SimpleForwardingClientCall<ReqT, RespT> {
     private final LoggingHandler<ReqT, RespT> handler;
     private final LogEntry.Builder entryBuilder;
@@ -74,6 +114,7 @@ public class LoggingInterceptor implements ClientInterceptor {
 
     @Override
     public void start(Listener<RespT> responseListener, Metadata headers) {
+      entryBuilder.setStartTime(getCurrentTimestamp());
       RequestMetadata metadata = TracingMetadataUtils.requestMetadataFromHeaders(headers);
       if (metadata != null) {
         entryBuilder.setMetadata(metadata);
@@ -89,9 +130,10 @@ public class LoggingInterceptor implements ClientInterceptor {
 
             @Override
             public void onClose(Status status, Metadata trailers) {
+              entryBuilder.setEndTime(getCurrentTimestamp());
               entryBuilder.setStatus(makeStatusProto(status));
-              // TODO(cdlee): Actually store this and log the entry.
-              entryBuilder.mergeFrom(handler.getEntry()).build();
+              entryBuilder.setDetails(handler.getDetails());
+              rpcLogFile.write(entryBuilder.build());
               super.onClose(status, trailers);
             }
           },

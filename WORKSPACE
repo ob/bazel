@@ -91,6 +91,29 @@ new_local_repository(
     build_file = "./third_party/googleapis/BUILD",
 )
 
+http_archive(
+    name = "desugar_jdk_libs",
+    url = "https://github.com/google/desugar_jdk_libs/archive/f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd.zip",
+    # Computed using "shasum -a 256 <zip>"
+    sha256 = "c80f3f3d442d8a6ca7adc83f90ecd638c3864087fdd6787ffac070b6f1cc8f9b",
+    strip_prefix = "desugar_jdk_libs-f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd",
+)
+
+load("//:distdir.bzl", "distdir_tar")
+distdir_tar(
+    name = "additional_distfiles",
+    dirname = "derived/distdir",
+    archives = ["f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd.zip"],
+    urls = {
+        "f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd.zip" :
+        ["https://github.com/google/desugar_jdk_libs/archive/f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd.zip"],
+    },
+    sha256 = {
+        "f5e6d80c6b4ec6b0a46603f72b015d45cf3c11cd.zip" :
+        "c80f3f3d442d8a6ca7adc83f90ecd638c3864087fdd6787ffac070b6f1cc8f9b",
+  },
+)
+
 # OpenJDK distributions used to create a version of Bazel bundled with the OpenJDK.
 http_file(
     name = "openjdk_linux",
@@ -123,22 +146,24 @@ http_file(
 )
 
 http_archive(
-    name = "bazel_toolchains",
-    urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/f3b09700fae5d7b6e659d7cefe0dcc6e8498504c.tar.gz",
-        "https://github.com/bazelbuild/bazel-toolchains/archive/f3b09700fae5d7b6e659d7cefe0dcc6e8498504c.tar.gz",
-    ],
-    strip_prefix = "bazel-toolchains-f3b09700fae5d7b6e659d7cefe0dcc6e8498504c",
-    sha256 = "ed829b5eea8af1f405f4cc3d6ecfc3b1365bb7843171036030a31b5127002311",
+  name = "bazel_toolchains",
+  urls = [
+    "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/09c850dbb8e785ded3d23a7003e9a0168fe1fb2f.tar.gz",
+    "https://github.com/bazelbuild/bazel-toolchains/archive/09c850dbb8e785ded3d23a7003e9a0168fe1fb2f.tar.gz",
+  ],
+  strip_prefix = "bazel-toolchains-09c850dbb8e785ded3d23a7003e9a0168fe1fb2f",
+  sha256 = "08e521cf2d0998e3d27a16c2e2542ebf4d3857b3ddadcfd145d128140754d7bd",
 )
 
+# We're pinning to a commit because this project does not have a recent release.
+# Nothing special about this commit, though.
 http_archive(
-    name = "com_googlesource_code_re2",
+    name = "com_google_googletest",
     urls = [
-        "https://github.com/google/re2/archive/2017-12-01.tar.gz",
+        "https://github.com/google/googletest/archive/dfa853b63d17c787914b663b50c2095a0c5b706e.tar.gz",
     ],
-    strip_prefix = "re2-2017-12-01",
-    sha256 = "62797e7cd7cc959419710cd25b075b5f5b247da0e8214d47bf5af9b32128fb0d",
+    strip_prefix = "googletest-dfa853b63d17c787914b663b50c2095a0c5b706e",
+    sha256 = "313a16fba8f0be8ee20ba9883e044556044cbd1ae6cea532473d163a843ef991",
 )
 
 # For src/test/shell/bazel:bazel_sandboxing_test

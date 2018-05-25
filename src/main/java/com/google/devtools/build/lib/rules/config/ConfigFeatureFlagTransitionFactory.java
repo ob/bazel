@@ -18,6 +18,7 @@ import static com.google.devtools.build.lib.packages.BuildType.LABEL_KEYED_STRIN
 
 import com.google.common.collect.ImmutableSortedMap;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
+import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
 import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.packages.NonconfigurableAttributeMapper;
@@ -54,12 +55,12 @@ public class ConfigFeatureFlagTransitionFactory implements RuleTransitionFactory
     }
 
     @Override
-    public BuildOptions apply(BuildOptions options) {
-      if (!options.contains(ConfigFeatureFlagConfiguration.Options.class)) {
+    public BuildOptions patch(BuildOptions options) {
+      if (!options.contains(ConfigFeatureFlagOptions.class)) {
         return options;
       }
       BuildOptions result = options.clone();
-      result.get(ConfigFeatureFlagConfiguration.Options.class).replaceFlagValues(flagValues);
+      result.get(ConfigFeatureFlagOptions.class).replaceFlagValues(flagValues);
       return result;
     }
 
@@ -100,8 +101,15 @@ public class ConfigFeatureFlagTransitionFactory implements RuleTransitionFactory
       return new ConfigFeatureFlagValuesTransition(
           attrs.get(attributeName, LABEL_KEYED_STRING_DICT));
     } else {
-      return null;
+      return NoTransition.INSTANCE;
     }
+  }
+
+  /**
+   * Returns the attribute examined by this transition factory.
+   */
+  public String getAttributeName() {
+    return this.attributeName;
   }
 
   @Override

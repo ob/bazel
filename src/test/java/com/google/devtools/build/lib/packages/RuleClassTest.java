@@ -252,8 +252,7 @@ public class RuleClassTest extends PackageLoadingTestCase {
   private Package.Builder createDummyPackageBuilder() {
     return packageFactory.newPackageBuilder(
         PackageIdentifier.createInMainRepo(TEST_PACKAGE_NAME), "TESTING")
-        .setFilename(testBuildfilePath)
-        .setMakeEnv(new MakeEnvironment.Builder());
+        .setFilename(testBuildfilePath);
   }
 
   @Test
@@ -866,8 +865,8 @@ public class RuleClassTest extends PackageLoadingTestCase {
     return new RuleClass(
         name,
         name,
+        RuleClassType.NORMAL,
         /*isSkylark=*/ skylarkExecutable,
-        skylarkExecutable,
         /*skylarkTestable=*/ false,
         documented,
         publicByDefault,
@@ -877,7 +876,6 @@ public class RuleClassTest extends PackageLoadingTestCase {
         implicitOutputsFunction,
         /*isConfigMatcher=*/ false,
         transitionFactory,
-        null,
         configuredTargetFactory,
         validityPredicate,
         preferredDependencyPredicate,
@@ -885,7 +883,9 @@ public class RuleClassTest extends PackageLoadingTestCase {
         configuredTargetFunction,
         externalBindingsFunction,
         /*optionReferenceFunction=*/ RuleClass.NO_OPTION_REFERENCE,
-        ruleDefinitionEnvironment,
+        ruleDefinitionEnvironment == null
+            ? null
+            : ruleDefinitionEnvironment.getGlobals().getLabel(),
         ruleDefinitionEnvironmentHashCode,
         new ConfigurationFragmentPolicy.Builder()
             .requiresConfigurationFragments(allowedConfigurationFragments)
@@ -894,7 +894,7 @@ public class RuleClassTest extends PackageLoadingTestCase {
         supportsConstraintChecking,
         /*requiredToolchains=*/ ImmutableSet.<Label>of(),
         /*supportsPlatforms=*/ true,
-        attributes);
+        ImmutableList.copyOf(attributes));
   }
 
   private static RuleClass createParentRuleClass() {

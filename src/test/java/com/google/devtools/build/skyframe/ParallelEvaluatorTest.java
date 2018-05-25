@@ -106,7 +106,8 @@ public class ParallelEvaluatorTest {
         ErrorInfoManager.UseChildErrorInfoIfNecessary.INSTANCE,
         keepGoing,
         150,
-        revalidationReceiver);
+        revalidationReceiver,
+        GraphInconsistencyReceiver.THROWING);
   }
 
   private ParallelEvaluator makeEvaluator(ProcessableGraph graph,
@@ -557,7 +558,7 @@ public class ParallelEvaluatorTest {
               }
 
               @Override
-              public boolean storeEvents() {
+              public boolean storeEventsAndPosts() {
                 return true;
               }
             });

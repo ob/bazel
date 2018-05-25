@@ -192,7 +192,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -228,7 +227,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -250,7 +248,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -261,7 +258,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -316,19 +312,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -675,7 +658,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -737,7 +719,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -780,7 +761,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -857,7 +837,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -887,7 +866,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -988,7 +966,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -1005,6 +982,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -1099,7 +1092,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -1121,7 +1113,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -1186,21 +1177,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -1607,7 +1594,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -1631,7 +1617,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -1654,7 +1639,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -1671,22 +1655,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -1859,7 +1831,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -1895,7 +1866,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -1904,7 +1874,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -1927,7 +1896,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -1938,7 +1906,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -1993,19 +1960,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -2352,7 +2306,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -2414,7 +2367,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -2457,7 +2409,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -2534,7 +2485,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -2564,7 +2514,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -2665,7 +2614,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -2682,6 +2630,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -2781,7 +2745,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -2803,7 +2766,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -2868,21 +2830,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -3291,7 +3249,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -3315,7 +3272,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -3338,7 +3294,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -3355,22 +3310,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -3543,7 +3486,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -3579,7 +3521,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -3588,7 +3529,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -3611,7 +3551,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -3622,7 +3561,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -3677,19 +3615,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -4036,7 +3961,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -4098,7 +4022,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -4141,7 +4064,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -4218,7 +4140,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -4248,7 +4169,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -4351,7 +4271,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -4368,6 +4287,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -4467,7 +4402,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -4489,7 +4423,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -4554,21 +4487,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -4977,7 +4906,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -5001,7 +4929,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -5024,7 +4951,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -5041,22 +4967,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -5230,7 +5144,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -5266,7 +5179,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -5275,7 +5187,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -5298,7 +5209,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -5309,7 +5219,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -5364,19 +5273,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -5723,7 +5619,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -5785,7 +5680,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -5828,7 +5722,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -5905,7 +5798,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -5935,7 +5827,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -6036,7 +5927,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -6053,6 +5943,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -6173,7 +6079,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -6195,7 +6100,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -6260,21 +6164,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -6690,7 +6590,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -6715,7 +6614,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -6739,7 +6637,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -6757,22 +6654,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -6945,7 +6830,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -6981,7 +6865,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -6990,7 +6873,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -7013,7 +6895,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -7024,7 +6905,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -7079,19 +6959,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -7438,7 +7305,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -7500,7 +7366,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -7543,7 +7408,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -7620,7 +7484,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -7650,7 +7513,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -7751,7 +7613,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -7768,6 +7629,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -7867,7 +7744,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -7889,7 +7765,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -7954,21 +7829,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -8377,7 +8248,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -8401,7 +8271,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -8424,7 +8293,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -8441,22 +8309,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -8629,7 +8485,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -8665,7 +8520,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -8674,7 +8528,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -8697,7 +8550,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -8708,7 +8560,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -8763,19 +8614,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -9122,7 +8960,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -9184,7 +9021,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -9227,7 +9063,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -9304,7 +9139,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -9334,7 +9168,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -9435,7 +9268,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -9452,6 +9284,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -9541,7 +9389,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -9563,7 +9410,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -9628,21 +9474,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -10049,7 +9891,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -10073,7 +9914,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -10096,7 +9936,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -10113,22 +9952,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -10301,7 +10128,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -10337,7 +10163,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -10346,7 +10171,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -10369,7 +10193,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -10380,7 +10203,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -10435,19 +10257,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -10794,7 +10603,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -10856,7 +10664,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -10899,7 +10706,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -10976,7 +10782,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -11006,7 +10811,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -11109,7 +10913,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -11126,6 +10929,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -11215,7 +11034,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -11237,7 +11055,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -11302,21 +11119,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -11723,7 +11536,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -11747,7 +11559,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -11770,7 +11581,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -11787,22 +11597,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -11976,7 +11774,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -12012,7 +11809,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -12021,7 +11817,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -12044,7 +11839,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -12055,7 +11849,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -12110,19 +11903,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -12469,7 +12249,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -12531,7 +12310,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -12574,7 +12352,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -12651,7 +12428,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -12681,7 +12457,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -12782,7 +12557,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -12799,6 +12573,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -12909,7 +12699,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -12931,7 +12720,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -12996,21 +12784,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -13424,7 +13208,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -13449,7 +13232,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -13473,7 +13255,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -13491,22 +13272,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -13679,7 +13448,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -13715,7 +13483,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -13724,7 +13491,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -13747,7 +13513,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -13758,7 +13523,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -13813,19 +13577,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -14172,7 +13923,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -14234,7 +13984,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -14277,7 +14026,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -14354,7 +14102,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -14384,7 +14131,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -14485,7 +14231,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -14502,6 +14247,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -14591,7 +14352,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -14613,7 +14373,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -14678,21 +14437,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -15099,7 +14854,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -15123,7 +14877,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -15146,7 +14899,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -15163,22 +14915,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {
@@ -15313,11 +15053,9 @@ toolchain {
   unfiltered_cxx_flag: "-D__DATE__=\"redacted\""
   unfiltered_cxx_flag: "-D__TIMESTAMP__=\"redacted\""
   unfiltered_cxx_flag: "-D__TIME__=\"redacted\""
-  supports_normalizing_ar: false
   supports_start_end_lib: false
   default_python_version: "python2.7"
   supports_interface_shared_objects: false
-  supports_incremental_linker: false
   supports_fission: false
   feature {
     name: "fastbuild"
@@ -15354,7 +15092,6 @@ toolchain {
       action: "c++-header-preprocessing"
       action: "c++-module-compile"
       action: "c++-module-codegen"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -15390,7 +15127,6 @@ toolchain {
   feature {
     name: "contains_objc_source"
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -15399,7 +15135,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -15422,7 +15157,6 @@ toolchain {
     implies: "c-compile"
     implies: "c++-compile"
     implies: "c++-link-static-library"
-    implies: "c++-link-interface-dynamic-library"
     implies: "c++-link-dynamic-library"
     implies: "c++-link-nodeps-dynamic-library"
     implies: "c++-link-executable"
@@ -15433,7 +15167,6 @@ toolchain {
       action: "c++-link-executable"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
@@ -15488,19 +15221,6 @@ toolchain {
         flag: "%{output_execpath}"
       }
       expand_if_all_available: "output_execpath"
-    }
-  }
-  feature {
-    name: "global_whole_archive_open"
-    flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
-      action: "c++-link-nodeps-dynamic-library"
-      action: "c++-link-static-library"
-      flag_group {
-        flag: "-Wl,-all_load"
-      }
-      expand_if_all_available: "global_whole_archive"
     }
   }
   feature {
@@ -15847,7 +15567,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "clif-match"
       flag_group {
         flag: "--sysroot=%{sysroot}"
@@ -15909,7 +15628,6 @@ toolchain {
       action: "c++-module-codegen"
       action: "assemble"
       action: "preprocess-assemble"
-      action: "lto-backend"
       flag_group {
         flag: "-gsplit-dwarf"
       }
@@ -15952,7 +15670,6 @@ toolchain {
     flag_set {
       action: "c-compile"
       action: "c++-compile"
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -16029,7 +15746,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -16059,7 +15775,6 @@ toolchain {
       }
     }
     flag_set {
-      action: "c++-link-interface-dynamic-library"
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-executable"
@@ -16160,7 +15875,6 @@ toolchain {
       action: "c++-link-dynamic-library"
       action: "c++-link-nodeps-dynamic-library"
       action: "c++-link-static-library"
-      action: "c++-link-interface-dynamic-library"
       action: "objc-executable"
       action: "objc++-executable"
       action: "linkstamp-compile"
@@ -16177,6 +15891,22 @@ toolchain {
         value: "%{apple_sdk_platform_value}"
       }
     }
+  }
+  feature {
+    name: "user_link_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      action: "c++-link-nodeps-dynamic-library"
+      action: "objc-executable"
+      action: "objc++-executable"
+      flag_group {
+        flag: "%{user_link_flags}"
+        iterate_over: "user_link_flags"
+      }
+      expand_if_all_available: "user_link_flags"
+    }
+    enabled: true
   }
   feature {
     name: "legacy_link_flags"
@@ -16266,7 +15996,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -16288,7 +16017,6 @@ toolchain {
       action: "c++-module-compile"
       action: "c++-module-codegen"
       action: "linkstamp-compile"
-      action: "lto-backend"
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
@@ -16353,21 +16081,17 @@ toolchain {
       action: "objc-compile"
       action: "objc++-compile"
       flag_group {
-        flag: "-o"
-        flag: "%{output_object_file}"
-        expand_if_all_available: "output_object_file"
-      }
-      flag_group {
         flag: "-S"
-        flag: "-o"
-        flag: "%{output_assembly_file}"
         expand_if_all_available: "output_assembly_file"
       }
       flag_group {
         flag: "-E"
-        flag: "-o"
-        flag: "%{output_preprocess_file}"
         expand_if_all_available: "output_preprocess_file"
+      }
+      flag_group {
+        flag: "-o"
+        flag: "%{output_file}"
+        expand_if_all_available: "output_file"
       }
     }
   }
@@ -16774,7 +16498,6 @@ toolchain {
     implies: "symbol_counts"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "force_pic_flags"
@@ -16798,7 +16521,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -16821,7 +16543,6 @@ toolchain {
     implies: "shared_flag"
     implies: "linkstamps"
     implies: "output_execpath_flags"
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "input_param_flags"
     implies: "legacy_link_flags"
@@ -16838,22 +16559,10 @@ toolchain {
       tool_path: "wrapped_ar"
       execution_requirement: "requires-darwin"
     }
-    implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
     implies: "archiver_flags"
     implies: "input_param_flags"
     implies: "linker_param_file"
-    implies: "apple_env"
-  }
-  action_config {
-    config_name: "c++-link-interface-dynamic-library"
-    action_name: "c++-link-interface-dynamic-library"
-    tool {
-      tool_path: "wrapped_clang"
-      execution_requirement: "requires-darwin"
-    }
-    implies: "contains_objc_source"
-    implies: "strip_debug_symbols"
     implies: "apple_env"
   }
   action_config {

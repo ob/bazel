@@ -19,12 +19,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.rules.cpp.CcCommon.CoptsFilter;
 import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Variables;
 import com.google.devtools.build.lib.rules.cpp.CppCompileAction.DotdFile;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.VisibleForSerialization;
 import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,8 +34,7 @@ public final class CompileCommandLine {
   private final Artifact sourceFile;
   private final CoptsFilter coptsFilter;
   private final FeatureConfiguration featureConfiguration;
-  private final PathFragment crosstoolTopPathFragment;
-  private final CcToolchainFeatures.Variables variables;
+  private final CcToolchainVariables variables;
   private final String actionName;
   private final DotdFile dotdFile;
 
@@ -47,14 +44,12 @@ public final class CompileCommandLine {
       Artifact sourceFile,
       CoptsFilter coptsFilter,
       FeatureConfiguration featureConfiguration,
-      PathFragment crosstoolTopPathFragment,
-      CcToolchainFeatures.Variables variables,
+      CcToolchainVariables variables,
       String actionName,
       DotdFile dotdFile) {
     this.sourceFile = Preconditions.checkNotNull(sourceFile);
     this.coptsFilter = coptsFilter;
     this.featureConfiguration = Preconditions.checkNotNull(featureConfiguration);
-    this.crosstoolTopPathFragment = crosstoolTopPathFragment;
     this.variables = variables;
     this.actionName = actionName;
     this.dotdFile = isGenerateDotdFile(sourceFile) ? dotdFile : null;
@@ -78,18 +73,14 @@ public final class CompileCommandLine {
         featureConfiguration.actionIsConfigured(actionName),
         "Expected action_config for '%s' to be configured",
         actionName);
-    return featureConfiguration
-        .getToolForAction(actionName)
-        .getToolPath(crosstoolTopPathFragment)
-        .getPathString();
+    return featureConfiguration.getToolForAction(actionName).getToolPathFragment().getPathString();
   }
 
   /**
    * @param overwrittenVariables: Variables that will overwrite original build variables. When null,
    *     unmodified original variables are used.
    */
-  protected List<String> getArguments(
-      @Nullable CcToolchainFeatures.Variables overwrittenVariables) {
+  protected List<String> getArguments(@Nullable CcToolchainVariables overwrittenVariables) {
     List<String> commandLine = new ArrayList<>();
 
     // first: The command name.
@@ -100,14 +91,12 @@ public final class CompileCommandLine {
     return commandLine;
   }
 
-  public List<String> getCompilerOptions(
-      @Nullable CcToolchainFeatures.Variables overwrittenVariables) {
+  public List<String> getCompilerOptions(@Nullable CcToolchainVariables overwrittenVariables) {
     List<String> options = new ArrayList<>();
 
-    CcToolchainFeatures.Variables updatedVariables = variables;
+    CcToolchainVariables updatedVariables = variables;
     if (variables != null && overwrittenVariables != null) {
-      CcToolchainFeatures.Variables.Builder variablesBuilder =
-          new CcToolchainFeatures.Variables.Builder(variables);
+      CcToolchainVariables.Builder variablesBuilder = new CcToolchainVariables.Builder(variables);
       variablesBuilder.addAllNonTransitive(overwrittenVariables);
       updatedVariables = variablesBuilder.build();
     }
@@ -138,7 +127,7 @@ public final class CompileCommandLine {
     return dotdFile;
   }
 
-  public Variables getVariables() {
+  public CcToolchainVariables getVariables() {
     return variables;
   }
 
@@ -150,9 +139,9 @@ public final class CompileCommandLine {
    * explicit attribute, not using platform-dependent garbage bag that copts is).
    */
   public ImmutableList<String> getCopts() {
-    if (variables.isAvailable(CcCompilationHelper.USER_COMPILE_FLAGS_VARIABLE_NAME)) {
-      return Variables.toStringList(
-          variables, CcCompilationHelper.USER_COMPILE_FLAGS_VARIABLE_NAME);
+    if (variables.isAvailable(CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName())) {
+      return CcToolchainVariables.toStringList(
+          variables, CompileBuildVariables.USER_COMPILE_FLAGS.getVariableName());
     } else {
       return ImmutableList.of();
     }
@@ -162,9 +151,8 @@ public final class CompileCommandLine {
       Artifact sourceFile,
       CoptsFilter coptsFilter,
       String actionName,
-      PathFragment crosstoolTopPathFragment,
       DotdFile dotdFile) {
-    return new Builder(sourceFile, coptsFilter, actionName, crosstoolTopPathFragment, dotdFile);
+    return new Builder(sourceFile, coptsFilter, actionName, dotdFile);
   }
 
   /** A builder for a {@link CompileCommandLine}. */
@@ -172,9 +160,8 @@ public final class CompileCommandLine {
     private final Artifact sourceFile;
     private CoptsFilter coptsFilter;
     private FeatureConfiguration featureConfiguration;
-    private CcToolchainFeatures.Variables variables = Variables.EMPTY;
+    private CcToolchainVariables variables = CcToolchainVariables.EMPTY;
     private final String actionName;
-    private final PathFragment crosstoolTopPathFragment;
     @Nullable private final DotdFile dotdFile;
 
     public CompileCommandLine build() {
@@ -182,7 +169,6 @@ public final class CompileCommandLine {
           Preconditions.checkNotNull(sourceFile),
           Preconditions.checkNotNull(coptsFilter),
           Preconditions.checkNotNull(featureConfiguration),
-          Preconditions.checkNotNull(crosstoolTopPathFragment),
           Preconditions.checkNotNull(variables),
           Preconditions.checkNotNull(actionName),
           dotdFile);
@@ -192,12 +178,10 @@ public final class CompileCommandLine {
         Artifact sourceFile,
         CoptsFilter coptsFilter,
         String actionName,
-        PathFragment crosstoolTopPathFragment,
         DotdFile dotdFile) {
       this.sourceFile = sourceFile;
       this.coptsFilter = coptsFilter;
       this.actionName = actionName;
-      this.crosstoolTopPathFragment = crosstoolTopPathFragment;
       this.dotdFile = dotdFile;
     }
 
@@ -207,7 +191,7 @@ public final class CompileCommandLine {
       return this;
     }
 
-    public Builder setVariables(Variables variables) {
+    public Builder setVariables(CcToolchainVariables variables) {
       this.variables = variables;
       return this;
     }

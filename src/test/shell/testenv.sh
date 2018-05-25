@@ -80,6 +80,7 @@ BAZEL_RUNFILES="$TEST_SRCDIR/io_bazel"
 
 # WORKSPACE file
 workspace_file="${BAZEL_RUNFILES}/WORKSPACE"
+distdir_bzl_file="${BAZEL_RUNFILES}/distdir.bzl"
 
 # Bazel
 bazel_tree="$(rlocation io_bazel/src/test/shell/bazel/doc-srcs.zip)"
@@ -136,8 +137,10 @@ def list_source_repository(name):
   pass
 EOF
   touch src/test/shell/bazel/BUILD
-  rm -f WORKSPACE
+  rm -f WORKSPACE distdir.bzl
   ln -sf ${workspace_file} WORKSPACE
+  touch BUILD
+  ln -sf ${distdir_bzl_file} distdir.bzl
 }
 
 # This function copies the tools directory from Bazel.
@@ -230,11 +233,11 @@ exit 1;
 case "${PLATFORM}" in
   darwin|freebsd)
     function sha256sum() {
-      cat "$1" | shasum -a 256 | cut -f 1 -d " "
+      shasum -a 256 "$@"
     }
     ;;
   *)
-    # Under linux sha256sum should exists
+    # Under Linux, sha256sum usually exists as a binary as part of coreutils.
     ;;
 esac
 

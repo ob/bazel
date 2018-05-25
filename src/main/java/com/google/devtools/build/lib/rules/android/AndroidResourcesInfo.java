@@ -25,10 +25,9 @@ import com.google.devtools.build.lib.skylarkinterface.SkylarkModuleCategory;
 
 /** A provider that supplies ResourceContainers from its transitive closure. */
 @SkylarkModule(
-  name = "AndroidResourcesInfo",
-  doc = "Android resources provided by a rule",
-  category = SkylarkModuleCategory.PROVIDER
-)
+    name = "AndroidResourcesInfo",
+    doc = "Android resources provided by a rule",
+    category = SkylarkModuleCategory.PROVIDER)
 @Immutable
 public class AndroidResourcesInfo extends NativeInfo {
 
@@ -36,9 +35,28 @@ public class AndroidResourcesInfo extends NativeInfo {
   public static final NativeProvider<AndroidResourcesInfo> PROVIDER =
       new NativeProvider<AndroidResourcesInfo>(AndroidResourcesInfo.class, SKYLARK_NAME) {};
 
+  /*
+   * Local information about the target that produced this provider, for tooling. These values will
+   * be made available even if they should not be inherited (for example, if this target has
+   * "neverlink" set) - do not inherit them directly.
+   */
+
+  // Lets us know where the provider came from
   private final Label label;
-  private final NestedSet<ResourceContainer> transitiveAndroidResources;
-  private final NestedSet<ResourceContainer> directAndroidResources;
+
+  // An updated manifest - resource processing sometimes does additional manifest processing
+  // TODO(b/30817309): Remove this once resource processing no longer does manifest processing
+  private final ProcessedAndroidManifest manifest;
+
+  // An R.txt file containing a list of all transitive resources this target expected
+  private final Artifact rTxt;
+
+  /*
+   * Transitive information used for resource processing
+   */
+
+  private final NestedSet<ValidatedAndroidData> transitiveAndroidResources;
+  private final NestedSet<ValidatedAndroidData> directAndroidResources;
   private final NestedSet<Artifact> transitiveResources;
   private final NestedSet<Artifact> transitiveAssets;
   private final NestedSet<Artifact> transitiveManifests;
@@ -50,8 +68,10 @@ public class AndroidResourcesInfo extends NativeInfo {
 
   AndroidResourcesInfo(
       Label label,
-      NestedSet<ResourceContainer> transitiveAndroidResources,
-      NestedSet<ResourceContainer> directAndroidResources,
+      ProcessedAndroidManifest manifest,
+      Artifact rTxt,
+      NestedSet<ValidatedAndroidData> transitiveAndroidResources,
+      NestedSet<ValidatedAndroidData> directAndroidResources,
       NestedSet<Artifact> transitiveResources,
       NestedSet<Artifact> transitiveAssets,
       NestedSet<Artifact> transitiveManifests,
@@ -62,6 +82,8 @@ public class AndroidResourcesInfo extends NativeInfo {
       NestedSet<Artifact> transitiveRTxt) {
     super(PROVIDER);
     this.label = label;
+    this.manifest = manifest;
+    this.rTxt = rTxt;
     this.transitiveAndroidResources = transitiveAndroidResources;
     this.directAndroidResources = directAndroidResources;
     this.transitiveResources = transitiveResources;
@@ -80,23 +102,34 @@ public class AndroidResourcesInfo extends NativeInfo {
     return label;
   }
 
+  public ProcessedAndroidManifest getManifest() {
+    return manifest;
+  }
+
+  /** Returns the r.txt file for the target. */
+  @SkylarkCallable(
+      name = "r_txt",
+      doc = "Returns the R.txt file for the target.",
+      structField = true)
+  public Artifact getRTxt() {
+    return rTxt;
+  }
+
   /** Returns the transitive ResourceContainers for the label. */
   @SkylarkCallable(
-    name = "transitive_android_resources",
-    doc = "Returns the transitive android resources for the label.",
-    structField = true
-  )
-  public NestedSet<ResourceContainer> getTransitiveAndroidResources() {
+      name = "transitive_android_resources",
+      doc = "Returns the transitive android resources for the label.",
+      structField = true)
+  public NestedSet<ValidatedAndroidData> getTransitiveAndroidResources() {
     return transitiveAndroidResources;
   }
 
   /** Returns the immediate ResourceContainers for the label. */
   @SkylarkCallable(
-    name = "direct_android_resources",
-    doc = "Returns the immediate android resources for the label.",
-    structField = true
-  )
-  public NestedSet<ResourceContainer> getDirectAndroidResources() {
+      name = "direct_android_resources",
+      doc = "Returns the immediate android resources for the label.",
+      structField = true)
+  public NestedSet<ValidatedAndroidData> getDirectAndroidResources() {
     return directAndroidResources;
   }
 
@@ -104,6 +137,8 @@ public class AndroidResourcesInfo extends NativeInfo {
     return transitiveResources;
   }
 
+  /** @deprecated Assets are being decoupled from resources */
+  @Deprecated
   public NestedSet<Artifact> getTransitiveAssets() {
     return transitiveAssets;
   }

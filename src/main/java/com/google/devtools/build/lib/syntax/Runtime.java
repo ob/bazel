@@ -16,8 +16,11 @@ package com.google.devtools.build.lib.syntax;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkGlobalLibrary;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkInterfaceUtils;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkPrinter;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkSignature;
@@ -135,14 +138,16 @@ public final class Runtime {
   )
   public static final String REPOSITORY_NAME = "REPOSITORY_NAME";
 
-  /**
-   * Set up a given environment for supported class methods.
-   */
-  static Environment setupConstants(Environment env) {
+  /** Adds bindings for False/True/None constants to the given map builder. */
+  public static void addConstantsToBuilder(ImmutableMap.Builder<String, Object> builder) {
     // In Python 2.x, True and False are global values and can be redefined by the user.
-    // In Python 3.x, they are keywords. We implement them as values, for the sake of
-    // simplicity. We define them as Boolean objects.
-    return env.setup("False", FALSE).setup("True", TRUE).setup("None", NONE);
+    // In Python 3.x, they are keywords. We implement them as values. Currently they can't be
+    // redefined because builtins can't be overridden. In the future we should permit shadowing of
+    // most builtins but still prevent shadowing of these constants.
+    builder
+        .put("False", FALSE)
+        .put("True", TRUE)
+        .put("None", NONE);
   }
 
 
@@ -152,7 +157,7 @@ public final class Runtime {
    */
   public static Class<?> getSkylarkNamespace(Class<?> clazz) {
     return String.class.isAssignableFrom(clazz)
-        ? MethodLibrary.StringModule.class
+        ? StringModule.class
         : EvalUtils.getSkylarkType(clazz);
   }
 
@@ -322,15 +327,52 @@ public final class Runtime {
   }
 
   /**
-   * Registers global fields with SkylarkSignature into the specified Environment.
+   * Convenience overload of {@link #setupModuleGlobals(ImmutableMap.Builder, Class)} to add
+   * bindings directly to an {@link Environment}.
+   *
    * @param env the Environment into which to register fields.
    * @param moduleClass the Class object containing globals.
    */
   public static void setupModuleGlobals(Environment env, Class<?> moduleClass) {
+    ImmutableMap.Builder<String, Object> envBuilder = ImmutableMap.builder();
+
+    setupModuleGlobals(envBuilder, moduleClass);
+    for (Map.Entry<String, Object> envEntry : envBuilder.build().entrySet()) {
+      env.setup(envEntry.getKey(), envEntry.getValue());
+    }
+  }
+
+  /**
+   * Adds global (top-level) symbols, provided by the given class object, to the given bindings
+   * builder.
+   *
+   * <p>Global symbols may be provided by the given class in the following ways:
+   * <ul>
+   *   <li>If the class is annotated with {@link SkylarkModule}, an instance of that object is
+   *       a global object with the module's name.</li>
+   *   <li>If the class has fields annotated with {@link SkylarkSignature}, each of these
+   *       fields is a global object with the signature's name.</li>
+   *   <li>If the class is annotated with {@link SkylarkGlobalLibrary}, then all of its methods
+   *       which are annotated with
+   *       {@link com.google.devtools.build.lib.skylarkinterface.SkylarkCallable} are global
+   *       callables.</li>
+   * </ul>
+   *
+   * <p>On collisions, this method throws an {@link AssertionError}. Collisions may occur if
+   * multiple global libraries have functions of the same name, two modules of the same name
+   * are given, or if two subclasses of the same module are given.
+   *
+   * @param builder the builder for the "bindings" map, which maps from symbol names to objects,
+   *     and which will be built into a global frame
+   * @param moduleClass the Class object containing globals
+   */
+  public static void setupModuleGlobals(ImmutableMap.Builder<String, Object> builder,
+      Class<?> moduleClass) {
     try {
-      if (moduleClass.isAnnotationPresent(SkylarkModule.class)) {
-        env.setup(
-            moduleClass.getAnnotation(SkylarkModule.class).name(),
+      SkylarkModule skylarkModule = SkylarkInterfaceUtils.getSkylarkModule(moduleClass);
+      if (skylarkModule != null) {
+        builder.put(
+            skylarkModule.name(),
             moduleClass.getConstructor().newInstance());
       }
       for (Field field : moduleClass.getDeclaredFields()) {
@@ -344,31 +386,18 @@ public final class Runtime {
           if (!(value instanceof BuiltinFunction.Factory
               || (value instanceof BaseFunction
                   && !annotation.objectType().equals(Object.class)))) {
-            env.setup(annotation.name(), value);
+            builder.put(annotation.name(), value);
           }
+        }
+      }
+      if (SkylarkInterfaceUtils.hasSkylarkGlobalLibrary(moduleClass)) {
+        Object moduleInstance = moduleClass.getConstructor().newInstance();
+        for (String methodName : FuncallExpression.getMethodNames(moduleClass)) {
+          builder.put(methodName, FuncallExpression.getBuiltinCallable(moduleInstance, methodName));
         }
       }
     } catch (ReflectiveOperationException e) {
       throw new AssertionError(e);
-    }
-  }
-
-  /**
-   * Registers global fields with SkylarkSignature into the specified Environment. Alias for
-   * {@link #setupModuleGlobals}.
-   *
-   * @deprecated Use {@link #setupModuleGlobals} instead.
-   */
-  @Deprecated
-  // TODO(bazel-team): Remove after all callers updated.
-  public static void registerModuleGlobals(Environment env, Class<?> moduleClass) {
-    setupModuleGlobals(env, moduleClass);
-  }
-
-  static void setupMethodEnvironment(
-      Environment env, Iterable<BaseFunction> functions) {
-    for (BaseFunction function : functions) {
-      env.setup(function.getName(), function);
     }
   }
 }

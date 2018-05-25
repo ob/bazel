@@ -14,11 +14,19 @@
 
 package com.google.devtools.build.lib.skyframe;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
+import com.google.devtools.build.lib.packages.NoSuchTargetException;
 import com.google.devtools.build.lib.packages.Package;
 import com.google.devtools.build.lib.packages.Target;
+import com.google.devtools.build.skyframe.SkyFunction;
+import com.google.devtools.build.skyframe.SkyKey;
+import com.google.devtools.build.skyframe.SkyValue;
+import java.util.Map;
+import javax.annotation.Nullable;
 
 /**
  * A container class for a {@link ConfiguredTarget} and associated data, {@link Target} and {@link
@@ -35,7 +43,8 @@ public class ConfiguredTargetAndData {
   private final Target target;
   private final BuildConfiguration configuration;
 
-  ConfiguredTargetAndData(
+  @VisibleForTesting
+  public ConfiguredTargetAndData(
       ConfiguredTarget configuredTarget, Target target, BuildConfiguration configuration) {
     this.configuredTarget = configuredTarget;
     this.target = target;
@@ -46,13 +55,59 @@ public class ConfiguredTargetAndData {
             + " ConfiguredTarget's label %s is not equal to Target's label %s",
         configuredTarget.getLabel(),
         target.getLabel());
-    Preconditions.checkState(
-        configuration == configuredTarget.getConfiguration(),
-        "Configurations don't match: %s %s (%s %s)",
-        configuration,
-        configuredTarget.getConfiguration(),
-        configuredTarget,
-        target);
+    BuildConfigurationValue.Key innerConfigurationKey = configuredTarget.getConfigurationKey();
+    if (configuration == null) {
+      Preconditions.checkState(
+          innerConfigurationKey == null,
+          "Non-null configuration key for %s but configuration is null (%s)",
+          configuredTarget,
+          target);
+    } else {
+      BuildConfigurationValue.Key configurationKey = BuildConfigurationValue.key(configuration);
+      Preconditions.checkState(
+          innerConfigurationKey.equals(configurationKey),
+          "Configurations don't match: %s %s %s (%s %s)",
+          configurationKey,
+          innerConfigurationKey,
+          configuration,
+          configuredTarget,
+          target);
+    }
+  }
+
+  @Nullable
+  static ConfiguredTargetAndData fromConfiguredTargetInSkyframe(
+      ConfiguredTarget ct, SkyFunction.Environment env) throws InterruptedException {
+    BuildConfiguration configuration = null;
+    ImmutableSet<SkyKey> packageAndMaybeConfiguration;
+    PackageValue.Key packageKey = PackageValue.key(ct.getLabel().getPackageIdentifier());
+    BuildConfigurationValue.Key configurationKeyMaybe = ct.getConfigurationKey();
+    if (configurationKeyMaybe == null) {
+      packageAndMaybeConfiguration = ImmutableSet.of(packageKey);
+    } else {
+      packageAndMaybeConfiguration = ImmutableSet.of(packageKey, configurationKeyMaybe);
+    }
+    Map<SkyKey, SkyValue> packageAndMaybeConfigurationValues =
+        env.getValues(packageAndMaybeConfiguration);
+    // Don't test env.valuesMissing(), because values may already be missing from the caller.
+    PackageValue packageValue = (PackageValue) packageAndMaybeConfigurationValues.get(packageKey);
+    if (packageValue == null) {
+      return null;
+    }
+    if (configurationKeyMaybe != null) {
+      BuildConfigurationValue buildConfigurationValue =
+          (BuildConfigurationValue) packageAndMaybeConfigurationValues.get(configurationKeyMaybe);
+      if (buildConfigurationValue == null) {
+        return null;
+      }
+      configuration = buildConfigurationValue.getConfiguration();
+    }
+    try {
+      return new ConfiguredTargetAndData(
+          ct, packageValue.getPackage().getTarget(ct.getLabel().getName()), configuration);
+    } catch (NoSuchTargetException e) {
+      throw new IllegalStateException("Failed to retrieve target for " + ct, e);
+    }
   }
 
   /**

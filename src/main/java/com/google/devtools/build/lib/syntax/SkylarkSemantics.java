@@ -40,27 +40,33 @@ public abstract class SkylarkSemantics {
 
   // <== Add new options here in alphabetic order ==>
   public abstract boolean incompatibleBzlDisallowLoadAfterStatement();
+
   public abstract boolean incompatibleDepsetIsNotIterable();
 
   public abstract boolean incompatibleDepsetUnion();
 
-  public abstract boolean incompatibleDisableGlobTracking();
   public abstract boolean incompatibleDisableObjcProviderResources();
 
   public abstract boolean incompatibleDisallowDictPlus();
-  public abstract boolean incompatibleDisallowThreeArgVardef();
-  public abstract boolean incompatibleDisallowToplevelIfStatement();
-  public abstract boolean incompatibleDisallowUncalledSetConstructor();
 
-  public abstract boolean incompatibleLoadArgumentIsLabel();
+  public abstract boolean incompatibleDisallowFileType();
+
+  public abstract boolean incompatibleDisallowLegacyJavaInfo();
+
+  public abstract boolean incompatibleDisallowOldStyleArgsAdd();
+
+  public abstract boolean incompatibleDisallowSlashOperator();
+
   public abstract boolean incompatibleNewActionsApi();
-  public abstract boolean incompatibleShowAllPrintMessages();
+
+  public abstract boolean incompatiblePackageNameIsAFunction();
 
   public abstract boolean incompatibleRemoveNativeGitRepository();
 
   public abstract boolean incompatibleRemoveNativeHttpArchive();
 
   public abstract boolean incompatibleStringIsNotIterable();
+
   public abstract boolean internalSkylarkFlagTestCanary();
 
   /** Returns a {@link Builder} initialized with the values of this instance. */
@@ -81,17 +87,16 @@ public abstract class SkylarkSemantics {
           .incompatibleBzlDisallowLoadAfterStatement(false)
           .incompatibleDepsetIsNotIterable(false)
           .incompatibleDepsetUnion(false)
-          .incompatibleDisableGlobTracking(true)
           .incompatibleDisableObjcProviderResources(false)
           .incompatibleDisallowDictPlus(false)
-          .incompatibleDisallowThreeArgVardef(false)
-          .incompatibleDisallowToplevelIfStatement(true)
-          .incompatibleDisallowUncalledSetConstructor(true)
-          .incompatibleLoadArgumentIsLabel(true)
+          .incompatibleDisallowFileType(false)
+          .incompatibleDisallowLegacyJavaInfo(false)
+          .incompatibleDisallowOldStyleArgsAdd(false)
+          .incompatibleDisallowSlashOperator(false)
           .incompatibleNewActionsApi(false)
+          .incompatiblePackageNameIsAFunction(false)
           .incompatibleRemoveNativeGitRepository(false)
           .incompatibleRemoveNativeHttpArchive(false)
-          .incompatibleShowAllPrintMessages(true)
           .incompatibleStringIsNotIterable(false)
           .internalSkylarkFlagTestCanary(false)
           .build();
@@ -102,26 +107,33 @@ public abstract class SkylarkSemantics {
 
     // <== Add new options here in alphabetic order ==>
     public abstract Builder incompatibleBzlDisallowLoadAfterStatement(boolean value);
+
     public abstract Builder incompatibleDepsetIsNotIterable(boolean value);
 
     public abstract Builder incompatibleDepsetUnion(boolean value);
 
-    public abstract Builder incompatibleDisableGlobTracking(boolean value);
     public abstract Builder incompatibleDisableObjcProviderResources(boolean value);
 
     public abstract Builder incompatibleDisallowDictPlus(boolean value);
-    public abstract Builder incompatibleDisallowThreeArgVardef(boolean value);
-    public abstract Builder incompatibleDisallowToplevelIfStatement(boolean value);
-    public abstract Builder incompatibleDisallowUncalledSetConstructor(boolean value);
-    public abstract Builder incompatibleLoadArgumentIsLabel(boolean value);
+
+    public abstract Builder incompatibleDisallowFileType(boolean value);
+
+    public abstract Builder incompatibleDisallowLegacyJavaInfo(boolean value);
+
+    public abstract Builder incompatibleDisallowOldStyleArgsAdd(boolean value);
+
+    public abstract Builder incompatibleDisallowSlashOperator(boolean value);
+
     public abstract Builder incompatibleNewActionsApi(boolean value);
+
+    public abstract Builder incompatiblePackageNameIsAFunction(boolean value);
 
     public abstract Builder incompatibleRemoveNativeGitRepository(boolean value);
 
     public abstract Builder incompatibleRemoveNativeHttpArchive(boolean value);
 
-    public abstract Builder incompatibleShowAllPrintMessages(boolean value);
     public abstract Builder incompatibleStringIsNotIterable(boolean value);
+
     public abstract Builder internalSkylarkFlagTestCanary(boolean value);
 
     public abstract SkylarkSemantics build();

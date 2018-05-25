@@ -21,8 +21,10 @@ import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.prettyA
 import com.google.common.collect.ImmutableList;
 import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.actions.Artifact;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
+import com.google.devtools.build.lib.rules.cpp.CcCompilationContext;
 import com.google.devtools.build.lib.rules.cpp.CcCompilationInfo;
 import com.google.devtools.build.lib.vfs.FileSystemUtils;
 import org.junit.Before;
@@ -106,23 +108,27 @@ public class CcProtoLibraryTest extends BuildViewTestCase {
         "proto_library(name = 'alias_proto', deps = [':foo_proto'])",
         "proto_library(name = 'foo_proto', srcs = ['foo.proto'])");
 
-    CcCompilationInfo ccCompilationInfo =
-        getConfiguredTarget("//x:foo_cc_proto").get(CcCompilationInfo.PROVIDER);
-    assertThat(prettyArtifactNames(ccCompilationInfo.getDeclaredIncludeSrcs()))
+    CcCompilationContext ccCompilationContext =
+        getConfiguredTarget("//x:foo_cc_proto")
+            .get(CcCompilationInfo.PROVIDER)
+            .getCcCompilationContext();
+    assertThat(prettyArtifactNames(ccCompilationContext.getDeclaredIncludeSrcs()))
         .containsExactly("x/foo.pb.h");
   }
 
   @Test
-  public void ccCompilationInfo() throws Exception {
+  public void ccCompilationContext() throws Exception {
     scratch.file(
         "x/BUILD",
         "cc_proto_library(name = 'foo_cc_proto', deps = ['foo_proto'])",
         "proto_library(name = 'foo_proto', srcs = ['foo.proto'], deps = [':bar_proto'])",
         "proto_library(name = 'bar_proto', srcs = ['bar.proto'])");
 
-    CcCompilationInfo ccCompilationInfo =
-        getConfiguredTarget("//x:foo_cc_proto").get(CcCompilationInfo.PROVIDER);
-    assertThat(prettyArtifactNames(ccCompilationInfo.getDeclaredIncludeSrcs()))
+    CcCompilationContext ccCompilationContext =
+        getConfiguredTarget("//x:foo_cc_proto")
+            .get(CcCompilationInfo.PROVIDER)
+            .getCcCompilationContext();
+    assertThat(prettyArtifactNames(ccCompilationContext.getDeclaredIncludeSrcs()))
         .containsExactly("x/foo.pb.h", "x/bar.pb.h");
   }
 
@@ -161,9 +167,8 @@ public class CcProtoLibraryTest extends BuildViewTestCase {
         "WORKSPACE", "local_repository(name = 'bla', path = '/bla/')", existingWorkspace);
     invalidatePackages(); // A dash of magic to re-evaluate the WORKSPACE file.
 
-    Artifact hFile =
-        getFirstArtifactEndingWith(
-            getFilesToBuild(getConfiguredTarget("//x:foo_cc_proto")), "bar.pb.h");
+    ConfiguredTarget target = getConfiguredTarget("//x:foo_cc_proto");
+    Artifact hFile = getFirstArtifactEndingWith(getFilesToBuild(target), "bar.pb.h");
     SpawnAction protoCompileAction = getGeneratingSpawnAction(hFile);
 
     assertThat(protoCompileAction.getArguments())
@@ -171,6 +176,11 @@ public class CcProtoLibraryTest extends BuildViewTestCase {
             String.format(
                 "--cpp_out=%s/external/bla",
                 getTargetConfiguration().getGenfilesFragment().toString()));
+
+    Artifact headerFile = getGenfilesArtifactWithNoOwner("external/bla/foo/bar.pb.h");
+    CcCompilationContext ccCompilationContext =
+        target.get(CcCompilationInfo.PROVIDER).getCcCompilationContext();
+    assertThat(ccCompilationContext.getDeclaredIncludeSrcs()).containsExactly(headerFile);
   }
 
   @Test

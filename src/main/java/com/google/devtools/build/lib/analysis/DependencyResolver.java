@@ -48,6 +48,7 @@ import com.google.devtools.build.lib.packages.OutputFile;
 import com.google.devtools.build.lib.packages.PackageGroup;
 import com.google.devtools.build.lib.packages.Rule;
 import com.google.devtools.build.lib.packages.RuleClass;
+import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec.VisibleForSerialization;
@@ -91,6 +92,10 @@ public abstract class DependencyResolver {
    * @param aspect the aspect applied to this target (if any)
    * @param configConditions resolver for config_setting labels
    * @param toolchainLabels required toolchain labels
+   * @param defaultBuildOptions default build options provided to the server to use for creating
+   *     diffs during SkyKey construction
+   * @param trimmingTransitionFactory the transition factory used to trim rules (note: this is a
+   *     temporary feature; see the corresponding methods in ConfiguredRuleClassProvider)
    * @return a mapping of each attribute in this rule or aspects to its dependent nodes
    */
   public final OrderedSetMultimap<Attribute, Dependency> dependentNodeMap(
@@ -98,7 +103,9 @@ public abstract class DependencyResolver {
       BuildConfiguration hostConfig,
       @Nullable Aspect aspect,
       ImmutableMap<Label, ConfigMatchingProvider> configConditions,
-      ImmutableSet<Label> toolchainLabels)
+      ImmutableSet<Label> toolchainLabels,
+      BuildOptions defaultBuildOptions,
+      @Nullable RuleTransitionFactory trimmingTransitionFactory)
       throws EvalException, InvalidConfigurationException, InterruptedException,
           InconsistentAspectOrderException {
     NestedSetBuilder<Label> rootCauses = NestedSetBuilder.<Label>stableOrder();
@@ -109,7 +116,9 @@ public abstract class DependencyResolver {
             aspect != null ? ImmutableList.of(aspect) : ImmutableList.<Aspect>of(),
             configConditions,
             toolchainLabels,
-            rootCauses);
+            rootCauses,
+            defaultBuildOptions,
+            trimmingTransitionFactory);
     if (!rootCauses.isEmpty()) {
       throw new IllegalStateException(rootCauses.build().iterator().next().toString());
     }
@@ -142,8 +151,12 @@ public abstract class DependencyResolver {
    * @param aspects the aspects applied to this target (if any)
    * @param configConditions resolver for config_setting labels
    * @param toolchainLabels required toolchain labels
-   * @param rootCauses collector for dep labels that can't be (loading phase) loaded @return a
-   *     mapping of each attribute in this rule or aspects to its dependent nodes
+   * @param trimmingTransitionFactory the transition factory used to trim rules (note: this is a
+   *     temporary feature; see the corresponding methods in ConfiguredRuleClassProvider)
+   * @param rootCauses collector for dep labels that can't be (loading phase) loaded
+   * @param defaultBuildOptions default build options provided by the server to use for creating
+   *     diffs during SkyKey construction
+   * @return a mapping of each attribute in this rule or aspects to its dependent nodes
    */
   public final OrderedSetMultimap<Attribute, Dependency> dependentNodeMap(
       TargetAndConfiguration node,
@@ -151,7 +164,9 @@ public abstract class DependencyResolver {
       Iterable<Aspect> aspects,
       ImmutableMap<Label, ConfigMatchingProvider> configConditions,
       ImmutableSet<Label> toolchainLabels,
-      NestedSetBuilder<Label> rootCauses)
+      NestedSetBuilder<Label> rootCauses,
+      BuildOptions defaultBuildOptions,
+      @Nullable RuleTransitionFactory trimmingTransitionFactory)
       throws EvalException, InvalidConfigurationException, InterruptedException,
           InconsistentAspectOrderException {
     Target target = node.getTarget();
@@ -168,7 +183,15 @@ public abstract class DependencyResolver {
       visitTargetVisibility(node, rootCauses, outgoingEdges.get(null));
     } else if (target instanceof Rule) {
       visitRule(
-          node, hostConfig, aspects, configConditions, toolchainLabels, rootCauses, outgoingEdges);
+          node,
+          hostConfig,
+          aspects,
+          configConditions,
+          toolchainLabels,
+          rootCauses,
+          outgoingEdges,
+          defaultBuildOptions,
+          trimmingTransitionFactory);
     } else if (target instanceof PackageGroup) {
       visitPackageGroup(node, (PackageGroup) target, rootCauses, outgoingEdges.get(null));
     } else {
@@ -185,7 +208,9 @@ public abstract class DependencyResolver {
       ImmutableMap<Label, ConfigMatchingProvider> configConditions,
       ImmutableSet<Label> toolchainLabels,
       NestedSetBuilder<Label> rootCauses,
-      OrderedSetMultimap<Attribute, Dependency> outgoingEdges)
+      OrderedSetMultimap<Attribute, Dependency> outgoingEdges,
+      BuildOptions defaultBuildOptions,
+      @Nullable RuleTransitionFactory trimmingTransitionFactory)
       throws EvalException, InvalidConfigurationException, InconsistentAspectOrderException,
           InterruptedException {
     Preconditions.checkArgument(node.getTarget() instanceof Rule);
@@ -195,11 +220,18 @@ public abstract class DependencyResolver {
     ConfiguredAttributeMapper attributeMap = ConfiguredAttributeMapper.of(rule, configConditions);
     attributeMap.validateAttributes();
     RuleResolver depResolver =
-        new RuleResolver(rule, ruleConfig, aspects, attributeMap, rootCauses, outgoingEdges);
+        new RuleResolver(
+            rule,
+            ruleConfig,
+            aspects,
+            attributeMap,
+            rootCauses,
+            outgoingEdges,
+            trimmingTransitionFactory);
 
     visitTargetVisibility(node, rootCauses, outgoingEdges.get(null));
     resolveEarlyBoundAttributes(depResolver);
-    resolveLateBoundAttributes(depResolver, ruleConfig, hostConfig);
+    resolveLateBoundAttributes(depResolver, ruleConfig, hostConfig, defaultBuildOptions);
 
     Attribute toolchainsAttribute =
         attributeMap.getAttributeDefinition(PlatformSemantics.TOOLCHAINS_ATTR);
@@ -330,34 +362,38 @@ public abstract class DependencyResolver {
   /**
    * Resolves the dependencies for all late-bound attributes in this rule.
    *
-   * <p>Late-bound attributes need special handling because they require configuration
-   * transitions to determine their values.
+   * <p>Late-bound attributes need special handling because they require configuration transitions
+   * to determine their values.
    *
    * <p>In other words, the normal process of dependency resolution is:
+   *
    * <ol>
-   *   <li>Find every label value in the rule's attributes</li>
+   *   <li>Find every label value in the rule's attributes
    *   <li>Apply configuration transitions over each value to get its dep configuration
-   *   <li>Return each value with its dep configuration</li>
+   *   <li>Return each value with its dep configuration
    * </ol>
    *
-   * This doesn't work for late-bound attributes because you can't get their values without
-   * knowing the configuration first. And that configuration may not be the owning rule's
-   * configuration. Specifically, {@link LateBoundDefault#useHostConfiguration()} switches to the
-   * host config and late-bound split attributes branch into multiple split configs.
+   * This doesn't work for late-bound attributes because you can't get their values without knowing
+   * the configuration first. And that configuration may not be the owning rule's configuration.
+   * Specifically, {@link LateBoundDefault#useHostConfiguration()} switches to the host config and
+   * late-bound split attributes branch into multiple split configs.
    *
-   * <p>This method implements that logic and makes sure the normal configuration
-   * transition logic mixes with it cleanly.
+   * <p>This method implements that logic and makes sure the normal configuration transition logic
+   * mixes with it cleanly.
    *
    * @param depResolver the resolver for this rule's deps
    * @param ruleConfig the rule's configuration
    * @param hostConfig the equivalent host configuration
+   * @param defaultBuildOptions default build options provided by the server to use for creating
+   *     diffs during SkyKey construction
    */
   private void resolveLateBoundAttributes(
       RuleResolver depResolver,
       BuildConfiguration ruleConfig,
-      BuildConfiguration hostConfig)
+      BuildConfiguration hostConfig,
+      BuildOptions defaultBuildOptions)
       throws EvalException, InvalidConfigurationException, InconsistentAspectOrderException,
-             InterruptedException{
+          InterruptedException {
     ConfiguredAttributeMapper attributeMap = depResolver.attributeMap;
     for (AttributeAndOwner attributeAndOwner : depResolver.attributes) {
       Attribute attribute = attributeAndOwner.attribute;
@@ -367,8 +403,15 @@ public abstract class DependencyResolver {
 
       LateBoundDefault<?, ?> lateBoundDefault = attribute.getLateBoundDefault();
 
-      Collection<BuildOptions> splitOptions = getSplitOptions(attributeMap, attribute, ruleConfig);
-      if (!splitOptions.isEmpty() && !ruleConfig.isHostConfiguration()) {
+      boolean hasSplitTransition = false;
+      List<BuildOptions> splitOptions = null;
+      if (attribute.hasSplitConfigurationTransition()) {
+        splitOptions =
+            attribute.getSplitTransition(attributeMap).split(ruleConfig.getOptions());
+        hasSplitTransition = !SplitTransition.equals(ruleConfig.getOptions(), splitOptions);
+      }
+
+      if (hasSplitTransition && !ruleConfig.isHostConfiguration()) {
         // Late-bound attribute with a split transition:
         // Since we want to get the same results as TransitionResolver.evaluateTransition (but
         // skip it since we've already applied the split), we want to make sure this logic
@@ -377,7 +420,7 @@ public abstract class DependencyResolver {
         // non-split branch, which calls TransitionResolver.evaluateTransition, which returns its
         // "host mode" result without ever looking at the split.
         Iterable<BuildConfiguration> splitConfigs =
-            getConfigurations(ruleConfig.fragmentClasses(), splitOptions);
+            getConfigurations(ruleConfig.fragmentClasses(), splitOptions, defaultBuildOptions);
         if (splitConfigs == null) {
           continue; // Need Skyframe deps.
         }
@@ -410,24 +453,6 @@ public abstract class DependencyResolver {
               label, HostTransition.INSTANCE, AspectCollection.EMPTY);
       dependencies.add(dependency);
     }
-  }
-
-  /**
-   * Returns the BuildOptions if the rule's attribute triggers a split in this configuration, or
-   * the empty collection if the attribute does not trigger a split transition or if the split
-   * transition does not apply.
-   *
-   * <p>Even though the attribute may have a split, splits don't have to apply in every
-   * configuration (see {@link SplitTransition#split}).
-   */
-  private static Collection<BuildOptions> getSplitOptions(ConfiguredAttributeMapper attributeMap,
-      Attribute attribute,
-      BuildConfiguration ruleConfig) {
-    if (!attribute.hasSplitConfigurationTransition()) {
-      return ImmutableList.<BuildOptions>of();
-    }
-    SplitTransition transition = attribute.getSplitTransition(attributeMap);
-    return transition.split(ruleConfig.getOptions());
   }
 
   /**
@@ -529,14 +554,21 @@ public abstract class DependencyResolver {
   public final Collection<Dependency> resolveRuleLabels(
       TargetAndConfiguration node,
       OrderedSetMultimap<Attribute, Label> depLabels,
-      NestedSetBuilder<Label> rootCauses)
+      NestedSetBuilder<Label> rootCauses,
+      @Nullable RuleTransitionFactory trimmingTransitionFactory)
       throws InterruptedException, InconsistentAspectOrderException {
     Preconditions.checkArgument(node.getTarget() instanceof Rule);
     Rule rule = (Rule) node.getTarget();
     OrderedSetMultimap<Attribute, Dependency> outgoingEdges = OrderedSetMultimap.create();
-    RuleResolver depResolver = new RuleResolver(
-        rule, node.getConfiguration(), ImmutableList.<Aspect>of(),
-        /*attributeMap=*/null, rootCauses, outgoingEdges);
+    RuleResolver depResolver =
+        new RuleResolver(
+            rule,
+            node.getConfiguration(),
+            ImmutableList.<Aspect>of(),
+            /*attributeMap=*/ null,
+            rootCauses,
+            outgoingEdges,
+            trimmingTransitionFactory);
     Map<Attribute, Collection<Label>> m = depLabels.asMap();
     for (Map.Entry<Attribute, Collection<Label>> entry : depLabels.asMap().entrySet()) {
       for (Label depLabel : entry.getValue()) {
@@ -661,6 +693,7 @@ public abstract class DependencyResolver {
     private final ConfiguredAttributeMapper attributeMap;
     private final NestedSetBuilder<Label> rootCauses;
     private final OrderedSetMultimap<Attribute, Dependency> outgoingEdges;
+    @Nullable private final RuleTransitionFactory trimmingTransitionFactory;
     private final List<AttributeAndOwner> attributes;
 
     /**
@@ -673,15 +706,21 @@ public abstract class DependencyResolver {
      * @param rootCauses output collector for dep labels that can't be (loading phase) loaded
      * @param outgoingEdges output collector for the resolved dependencies
      */
-    RuleResolver(Rule rule, BuildConfiguration ruleConfig, Iterable<Aspect> aspects,
-        ConfiguredAttributeMapper attributeMap, NestedSetBuilder<Label> rootCauses,
-        OrderedSetMultimap<Attribute, Dependency> outgoingEdges) {
+    RuleResolver(
+        Rule rule,
+        BuildConfiguration ruleConfig,
+        Iterable<Aspect> aspects,
+        ConfiguredAttributeMapper attributeMap,
+        NestedSetBuilder<Label> rootCauses,
+        OrderedSetMultimap<Attribute, Dependency> outgoingEdges,
+        @Nullable RuleTransitionFactory trimmingTransitionFactory) {
       this.rule = rule;
       this.ruleConfig = ruleConfig;
       this.aspects = aspects;
       this.attributeMap = attributeMap;
       this.rootCauses = rootCauses;
       this.outgoingEdges = outgoingEdges;
+      this.trimmingTransitionFactory = trimmingTransitionFactory;
 
       this.attributes =
           getAttributes(
@@ -718,8 +757,14 @@ public abstract class DependencyResolver {
       if (toTarget == null) {
         return; // Skip this round: we still need to Skyframe-evaluate the dep's target.
       }
-      ConfigurationTransition transition = TransitionResolver.evaluateTransition(
-          ruleConfig, rule, attributeAndOwner.attribute, toTarget, attributeMap);
+      ConfigurationTransition transition =
+          TransitionResolver.evaluateTransition(
+              ruleConfig,
+              rule,
+              attributeAndOwner.attribute,
+              toTarget,
+              attributeMap,
+              trimmingTransitionFactory);
       outgoingEdges.put(
           attributeAndOwner.attribute,
           transition == NullTransition.INSTANCE
@@ -787,7 +832,7 @@ public abstract class DependencyResolver {
     }
 
     @Override
-    public BuildOptions apply(BuildOptions options) {
+    public BuildOptions patch(BuildOptions options) {
       return toOptions;
     }
   }
@@ -858,8 +903,11 @@ public abstract class DependencyResolver {
       throws InterruptedException;
 
   /**
-   * Returns the build configurations with the given options and fragments, in the same order as the
-   * input options.
+   * Returns the build configurations with the given fragments and {@link
+   * BuildOptions.OptionsDiffForReconstruction} resulting from calling {@link
+   * BuildOptions#diffForReconstruction} between the {@code defaultBuildOptions} and the provided
+   * {@code buildOptions}. Results will be returned in the order the {@code buildOptions} are
+   * provided.
    *
    * <p>Returns null if any configurations aren't ready to be returned at this moment. If
    * getConfigurations returns null once or more during a {@link #dependentNodeMap} call, the
@@ -868,7 +916,9 @@ public abstract class DependencyResolver {
    */
   @Nullable
   protected abstract List<BuildConfiguration> getConfigurations(
-      FragmentClassSet fragments, Iterable<BuildOptions> buildOptions)
+      FragmentClassSet fragments,
+      Iterable<BuildOptions> buildOptions,
+      BuildOptions defaultBuildOptions)
       throws InvalidConfigurationException, InterruptedException;
 
   /**

@@ -19,10 +19,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.devtools.build.lib.skyframe.serialization.Memoizer.Deserializer;
 import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry.CodecDescriptor;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs.MemoizationPermission;
 import com.google.protobuf.CodedInputStream;
 import java.io.IOException;
-import java.util.function.Function;
 import javax.annotation.CheckReturnValue;
 
 /**
@@ -34,70 +32,26 @@ import javax.annotation.CheckReturnValue;
 public class DeserializationContext {
   private final ObjectCodecRegistry registry;
   private final ImmutableMap<Class<?>, Object> dependencies;
-  private final MemoizationPermission memoizationPermission;
   private final Memoizer.Deserializer deserializer;
 
   private DeserializationContext(
       ObjectCodecRegistry registry,
       ImmutableMap<Class<?>, Object> dependencies,
-      MemoizationPermission memoizationPermission,
       Deserializer deserializer) {
     this.registry = registry;
     this.dependencies = dependencies;
-    this.memoizationPermission = memoizationPermission;
     this.deserializer = deserializer;
   }
 
   @VisibleForTesting
   public DeserializationContext(
       ObjectCodecRegistry registry, ImmutableMap<Class<?>, Object> dependencies) {
-    this(registry, dependencies, MemoizationPermission.ALLOWED, /*deserializer=*/ null);
+    this(registry, dependencies, /*deserializer=*/ null);
   }
 
   @VisibleForTesting
   public DeserializationContext(ImmutableMap<Class<?>, Object> dependencies) {
     this(AutoRegistry.get(), dependencies);
-  }
-
-  DeserializationContext disableMemoization() {
-    Preconditions.checkState(
-        memoizationPermission == MemoizationPermission.ALLOWED, "memoization already disabled");
-    Preconditions.checkState(deserializer == null, "deserializer already present");
-    return new DeserializationContext(
-        registry, dependencies, MemoizationPermission.DISABLED, deserializer);
-  }
-
-  /**
-   * Returns a {@link DeserializationContext} that will memoize values it encounters (using
-   * reference equality), the inverse of the memoization performed by a {@link SerializationContext}
-   * returned by {@link SerializationContext#newMemoizingContext}. The context returned here should
-   * be used instead of the original: memoization may only occur when using the returned context.
-   *
-   * <p>A new {@link DeserializationContext} will be created for each call of this method, since it
-   * is assumed that each codec that calls this method has data that it needs to inject into its
-   * children that should mask its parents' injected data. Thus, over-eagerly calling this method
-   * will reduce the effectiveness of memoization.
-   */
-  @CheckReturnValue
-  public DeserializationContext newMemoizingContext(Object additionalData) {
-    Preconditions.checkNotNull(additionalData);
-    Preconditions.checkState(
-        memoizationPermission == MemoizationPermission.ALLOWED, "memoization disabled");
-    // TODO(janakr,brandjon): De we want to support a single context with data that gets pushed and
-    // popped.
-    return new DeserializationContext(
-        this.registry, this.dependencies, memoizationPermission, new Deserializer(additionalData));
-  }
-
-  /**
-   * Construct an initial value for the currently deserializing value from the additional data
-   * stored in a memoizing deserializer. The additional data must have type {@code klass}. The given
-   * {@code initialValueFunction} should be a hermetic function that does not interact with this
-   * context or {@code codedIn in any way}: it should be a pure function of an element of type
-   * {@link A}.
-   */
-  public <A, T> T makeInitialValue(Function<A, T> initialValueFunction, Class<A> klass) {
-    return deserializer.makeInitialValue(initialValueFunction, klass);
   }
 
   // TODO(shahan): consider making codedIn a member of this class.
@@ -106,6 +60,10 @@ public class DeserializationContext {
     int tag = codedIn.readSInt32();
     if (tag == 0) {
       return null;
+    }
+    if (tag < 0) {
+      // Subtract 1 to undo transformation from SerializationContext to avoid null.
+      return (T) deserializer.getMemoized(-tag - 1);
     }
     T constant = (T) registry.maybeGetConstantByTag(tag);
     if (constant != null) {
@@ -119,9 +77,51 @@ public class DeserializationContext {
     }
   }
 
+  /**
+   * Register an initial value for the currently deserializing value, for use by child objects that
+   * may have references to it.
+   *
+   * <p>This is a noop when memoization is disabled.
+   */
+  public <T> void registerInitialValue(T initialValue) {
+    if (deserializer == null) {
+      return;
+    }
+    deserializer.registerInitialValue(initialValue);
+  }
+
   @SuppressWarnings("unchecked")
   public <T> T getDependency(Class<T> type) {
     Preconditions.checkNotNull(type);
     return (T) dependencies.get(type);
+  }
+
+  /**
+   * Returns a {@link DeserializationContext} that will memoize values it encounters (using
+   * reference equality), the inverse of the memoization performed by a {@link SerializationContext}
+   * returned by {@link SerializationContext#getMemoizingContext}. The context returned here should
+   * be used instead of the original: memoization may only occur when using the returned context.
+   *
+   * <p>This method is idempotent: calling it on an already memoizing context will return the same
+   * context.
+   */
+  @CheckReturnValue
+  public DeserializationContext getMemoizingContext() {
+    if (deserializer != null) {
+      return this;
+    }
+    return getNewMemoizingContext();
+  }
+
+  /**
+   * Returns a memoizing {@link DeserializationContext}, as getMemoizingContext above. Unlike
+   * getMemoizingContext, this method is not idempotent - the returned context will always be fresh.
+   */
+  public DeserializationContext getNewMemoizingContext() {
+    return new DeserializationContext(this.registry, this.dependencies, new Deserializer());
+  }
+
+  public DeserializationContext getNewNonMemoizingContext() {
+    return new DeserializationContext(this.registry, this.dependencies, null);
   }
 }

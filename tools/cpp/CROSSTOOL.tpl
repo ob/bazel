@@ -22,6 +22,11 @@ default_toolchain {
 }
 
 default_toolchain {
+  cpu: "local"
+  toolchain_identifier: "stub_armeabi-v7a"
+}
+
+default_toolchain {
   cpu: "armeabi-v7a"
   toolchain_identifier: "stub_armeabi-v7a"
 }
@@ -44,6 +49,11 @@ default_toolchain {
 default_toolchain {
   cpu: "s390x"
   toolchain_identifier: "%{toolchain_name}"
+}
+
+default_toolchain {
+  cpu: "local"
+  toolchain_identifier: "ios_x86_64"
 }
 
 default_toolchain {
@@ -159,6 +169,12 @@ toolchain {
   target_cpu: "x64_windows"
   target_system_name: "local"
 
+  artifact_name_pattern {
+     category_name: 'executable'
+     prefix: ''
+     extension: '.exe'
+  }
+
 %{msys_x64_mingw_content}
 
   linking_mode_flags { mode: DYNAMIC }
@@ -269,6 +285,42 @@ toolchain {
     name: "no_legacy_features"
   }
 
+  artifact_name_pattern {
+     category_name: 'object_file'
+     prefix: ''
+     extension: '.obj'
+  }
+
+  artifact_name_pattern {
+     category_name: 'static_library'
+     prefix: ''
+     extension: '.lib'
+  }
+
+  artifact_name_pattern {
+     category_name: 'alwayslink_static_library'
+     prefix: ''
+     extension: '.lo.lib'
+  }
+
+  artifact_name_pattern {
+     category_name: 'executable'
+     prefix: ''
+     extension: '.exe'
+  }
+
+  artifact_name_pattern {
+     category_name: 'dynamic_library'
+     prefix: ''
+     extension: '.dll'
+  }
+
+  artifact_name_pattern {
+     category_name: 'interface_library'
+     prefix: ''
+     extension: '.if.lib'
+  }
+
   # Suppress startup banner.
   feature {
     name: "nologo"
@@ -317,15 +369,8 @@ toolchain {
     tool {
       tool_path: '%{msvc_ml_path}'
     }
-    flag_set {
-      expand_if_all_available: 'output_object_file'
-      flag_group {
-        flag: '/Fo%{output_object_file}'
-        flag: '/Zi'
-        flag: '/c'
-        flag: '%{source_file}'
-      }
-    }
+    implies: 'compiler_input_flags'
+    implies: 'compiler_output_flags'
     implies: 'nologo'
     implies: 'msvc_env'
     implies: 'sysroot'
@@ -337,31 +382,8 @@ toolchain {
     tool {
       tool_path: '%{msvc_cl_path}'
     }
-    flag_set {
-      flag_group {
-        flag: '/c'
-        flag: '%{source_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_object_file'
-      flag_group {
-        flag: '/Fo%{output_object_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_assembly_file'
-      flag_group {
-        flag: '/Fa%{output_assembly_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_preprocess_file'
-      flag_group {
-        flag: '/P'
-        flag: '/Fi%{output_preprocess_file}'
-      }
-    }
+    implies: 'compiler_input_flags'
+    implies: 'compiler_output_flags'
     implies: 'legacy_compile_flags'
     implies: 'nologo'
     implies: 'msvc_env'
@@ -377,31 +399,8 @@ toolchain {
     tool {
       tool_path: '%{msvc_cl_path}'
     }
-    flag_set {
-      flag_group {
-        flag: '/c'
-        flag: '%{source_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_object_file'
-      flag_group {
-        flag: '/Fo%{output_object_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_assembly_file'
-      flag_group {
-        flag: '/Fa%{output_assembly_file}'
-      }
-    }
-    flag_set {
-      expand_if_all_available: 'output_preprocess_file'
-      flag_group {
-        flag: '/P'
-        flag: '/Fi%{output_preprocess_file}'
-      }
-    }
+    implies: 'compiler_input_flags'
+    implies: 'compiler_output_flags'
     implies: 'legacy_compile_flags'
     implies: 'nologo'
     implies: 'msvc_env'
@@ -421,6 +420,7 @@ toolchain {
     implies: 'linkstamps'
     implies: 'output_execpath_flags'
     implies: 'input_param_flags'
+    implies: 'user_link_flags'
     implies: 'legacy_link_flags'
     implies: 'linker_subsystem_flag'
     implies: 'linker_param_file'
@@ -440,6 +440,7 @@ toolchain {
     implies: 'linkstamps'
     implies: 'output_execpath_flags'
     implies: 'input_param_flags'
+    implies: 'user_link_flags'
     implies: 'legacy_link_flags'
     implies: 'linker_subsystem_flag'
     implies: 'linker_param_file'
@@ -461,6 +462,7 @@ toolchain {
       implies: 'linkstamps'
       implies: 'output_execpath_flags'
       implies: 'input_param_flags'
+      implies: 'user_link_flags'
       implies: 'legacy_link_flags'
       implies: 'linker_subsystem_flag'
       implies: 'linker_param_file'
@@ -480,17 +482,6 @@ toolchain {
     implies: 'nologo'
     implies: 'archiver_flags'
     implies: 'input_param_flags'
-    implies: 'linker_param_file'
-    implies: 'msvc_env'
-  }
-
-  action_config {
-    config_name: 'c++-link-interface-dynamic-library'
-    action_name: 'c++-link-interface-dynamic-library'
-    tool {
-      tool_path: '%{msvc_lib_path}'
-    }
-    implies: 'nologo'
     implies: 'linker_param_file'
     implies: 'msvc_env'
   }
@@ -792,8 +783,8 @@ toolchain {
   }
 
   # Since this feature is declared earlier in the CROSSTOOL than
-  # "legacy_link_flags", this feature will be applied prior to it anwyhere they
-  # are both implied. And since "legacy_link_flags" contains the linkopts from
+  # "user_link_flags", this feature will be applied prior to it anwyhere they
+  # are both implied. And since "user_link_flags" contains the linkopts from
   # the build rule, this allows the user to override the /SUBSYSTEM in the BUILD
   # file.
   feature {
@@ -808,11 +799,24 @@ toolchain {
     }
   }
 
-  # The "legacy_link_flags" may contain user-defined linkopts (from build rules)
+  # The "user_link_flags" contains user-defined linkopts (from build rules)
   # so it should be defined after features that declare user-overridable flags.
   # For example the "linker_subsystem_flag" defines a default "/SUBSYSTEM" flag
   # but we want to let the user override it, therefore "link_flag_subsystem" is
-  # defined earlier in the CROSSTOOL file than "legacy_link_flags".
+  # defined earlier in the CROSSTOOL file than "user_link_flags".
+  feature {
+    name: 'user_link_flags'
+    flag_set {
+      expand_if_all_available: 'user_link_flags'
+      action: 'c++-link-executable'
+      action: 'c++-link-dynamic-library'
+      action: "c++-link-nodeps-dynamic-library"
+      flag_group {
+        iterate_over: 'user_link_flags'
+        flag: '%{user_link_flags}'
+      }
+    }
+  }
   feature {
     name: 'legacy_link_flags'
     flag_set {
@@ -1039,6 +1043,65 @@ toolchain {
       flag_group {
         iterate_over: 'unfiltered_compile_flags'
         flag: '%{unfiltered_compile_flags}'
+      }
+    }
+  }
+
+  feature {
+    name: 'compiler_output_flags'
+    flag_set {
+      action: 'assemble'
+      flag_group {
+        expand_if_all_available: 'output_file'
+        expand_if_none_available: 'output_assembly_file'
+        expand_if_none_available: 'output_preprocess_file'
+        flag: '/Fo%{output_file}'
+        flag: '/Zi'
+      }
+    }
+    flag_set {
+      action: 'preprocess-assemble'
+      action: 'c-compile'
+      action: 'c++-compile'
+      action: 'c++-header-parsing'
+      action: 'c++-header-preprocessing'
+      action: 'c++-module-compile'
+      action: 'c++-module-codegen'
+      flag_group {
+        expand_if_all_available: 'output_file'
+        expand_if_none_available: 'output_assembly_file'
+        expand_if_none_available: 'output_preprocess_file'
+        flag: '/Fo%{output_file}'
+      }
+      flag_group {
+        expand_if_all_available: 'output_file'
+        expand_if_all_available: 'output_assembly_file'
+        flag: '/Fa%{output_file}'
+      }
+      flag_group {
+        expand_if_all_available: 'output_file'
+        expand_if_all_available: 'output_preprocess_file'
+        flag: '/P'
+        flag: '/Fi%{output_file}'
+      }
+    }
+  }
+
+  feature {
+    name: 'compiler_input_flags'
+    flag_set {
+      action: 'assemble'
+      action: 'preprocess-assemble'
+      action: 'c-compile'
+      action: 'c++-compile'
+      action: 'c++-header-parsing'
+      action: 'c++-header-preprocessing'
+      action: 'c++-module-compile'
+      action: 'c++-module-codegen'
+      flag_group {
+        expand_if_all_available: 'source_file'
+        flag: '/c'
+        flag: '%{source_file}'
       }
     }
   }

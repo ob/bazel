@@ -344,9 +344,6 @@ Otherwise, executables that are used at runtime (e.g. as part of a test) should
 be built for the target configuration. In this case, specify `cfg="target"` in
 the attribute.
 
-The configuration `"data"` is present for legacy reasons and should be used for
-the `data` attributes.
-
 ## <a name="fragments"></a> Configuration Fragments
 
 Rules may access [configuration fragments](lib/skylark-configuration-fragment.html)
@@ -428,35 +425,54 @@ Providers are only available during the analysis phase. Examples of usage:
 * [providers with depsets](https://github.com/bazelbuild/examples/blob/master/rules/depsets/foo.bzl)
     This examples shows how a library and a binary rule can pass information.
 
-> *Note:*
-> Historically, Bazel also supported provider instances that are identified by strings and
-> accessed as fields on the `target` object instead of as keys. This style is deprecated
-> but still supported. Return legacy providers as follows:
->
+### Migrating from Legacy Providers
+
+Historically, Bazel providers were simple fields on the `Target` object. They
+were accessed using the dot operator, and they were created by putting the field
+in a struct returned by the rule's implementation function.
+
+*This style is deprecated and should not be used in new code;* see below for
+information that may help you migrate. The new provider mechanism avoids name
+clashes. It also supports data hiding, by requiring any code accessing a
+provider instance to retrieve it using the provider symbol.
+
+For the moment, legacy providers are still supported. A rule can return both
+legacy and modern providers as follows:
+
 ```python
-def rule_implementation(ctx):
+def _myrule_impl(ctx):
   ...
-  modern_provider = TransitiveDataInfo(value=5)
-  # Legacy style.
-  return struct(legacy_provider = struct(...),
-                another_legacy_provider = struct(...),
-                # The `providers` field contains provider instances that can be accessed
-                # the "modern" way.
-                providers = [modern_provider])
+  legacy_data = struct(x="foo", ...)
+  modern_data = MyInfo(y="bar", ...)
+  # When any legacy providers are returned, the top-level returned value is a struct.
+  return struct(
+      # One key = value entry for each legacy provider.
+      legacy_info = legacy_data,
+      ...
+      # All modern providers are put in a list passed to the special "providers" key.
+      providers = [modern_data, ...])
 ```
-> To access legacy providers, use the dot notation.
-> Note that the same target can define both modern and legacy providers:
->
-```python
-def dependent_rule_implementation(ctx):
-  ...
-  n = 0
-  for dep_target in ctx.attr.deps:
-    # n += dep_target.legacy_provider.value   # legacy style
-    n += dep_target[TransitiveDataInfo].value # modern style
-  ...
-```
-> **We recommend using modern providers for all future code.**
+
+If `dep` is the resulting `Target` object for an instance of this rule, the
+providers and their contents can be retrieved as `dep.legacy_info.x` and
+`dep[MyInfo].y`.
+
+In addition to `providers`, the returned struct can also take several other
+fields that have special meaning (and that do not create a corresponding legacy
+provider).
+
+* The fields `files`, `runfiles`, `data_runfiles`, `default_runfiles`, and
+  `executable` correspond to the same-named fields of
+  [`DefaultInfo`](lib/globals.html#DefaultInfo). It is not allowed to specify
+  any of these fields while also returning a `DefaultInfo` modern provider.
+
+* The field `output_groups` takes a struct value and corresponds to an
+  [`OutputGroupInfo`](lib/globals.html#OutputGroupInfo).
+
+* The field `instrumented_files` is for
+  [code coverage instrumentation](#code-coverage-instrumentation). It does not
+  yet have a modern provider equivalent. If you need it, you cannot yet migrate
+  away from legacy providers.
 
 ## Runfiles
 
@@ -557,10 +573,10 @@ of output files that may be requested together. For example, if a target
 `//pkg:mytarget` is of a rule type that has a `debug_files` output group, these
 files can be built by running
 `bazel build //pkg:mytarget --output_groups=debug_files`. See the [command line
-reference](../command-line-reference.html#build) for details on the
-`--output_groups` argument. Since non-predeclared outputs don't have labels,
-they can only be requested by appearing in the default outputs or an output
-group.
+reference](https://docs.bazel.build/versions/master/command-line-reference.html#flag--output_groups)
+for details on the `--output_groups` argument. Since non-predeclared outputs
+don't have labels, they can only be requested by appearing in the default
+outputs or an output group.
 
 You can specify the default outputs and output groups of a rule by returning the
 [`DefaultInfo`](lib/globals.html#DefaultInfo) and
@@ -681,35 +697,3 @@ _example_test = rule(
  ...
 )
 ```
-
-## Troubleshooting
-
-### Why is the action never executed?
-
-Bazel executes an action only when at least one of its outputs are requested. If
-the target is built directly, make sure the output you need is in the [default
-outputs](#requesting-output-files).
-
-When the target is used as a dependency, check which providers are used and consumed.
-
-### Why is the implementation function not executed?
-
-Bazel analyzes only the targets that are requested for the build. You should
-either build the target, or build something that depends on the target.
-
-### A file is missing during execution
-
-When you create an action, you need to specify all the inputs. Please
-double-check that you didn't forget anything.
-
-If a binary requires files at runtime, such as dynamic libraries or data files,
-you may need to [specify the runfiles](#runfiles).
-
-### How to choose which files are shown in the output of `bazel build`?
-
-Use the [`DefaultInfo`](lib/globals.html#DefaultInfo) provider to
-[set the default outputs](#requesting-output-files).
-
-### How to run a program in the analysis phase?
-
-It is not possible.

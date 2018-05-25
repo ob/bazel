@@ -52,18 +52,17 @@ public class SpawnGccStrategy implements CppCompileActionContext {
         new SimpleSpawn(
             action,
             ImmutableList.copyOf(action.getArguments()),
-            ImmutableMap.copyOf(action.getEnvironment()),
+            ImmutableMap.copyOf(action.getEnvironment(actionExecutionContext.getClientEnv())),
             ImmutableMap.copyOf(action.getExecutionInfo()),
             EmptyRunfilesSupplier.INSTANCE,
+            ImmutableMap.of(),
             ImmutableList.copyOf(inputs),
             /* tools= */ ImmutableList.of(),
-            /* filesetManifests= */ ImmutableList.of(),
             action.getOutputs().asList(),
             action.estimateResourceConsumptionLocal());
 
     List<SpawnResult> spawnResults =
-        actionExecutionContext
-            .getSpawnActionContext(action.getMnemonic())
+        actionExecutionContext.getContext(SpawnActionContext.class)
             .exec(spawn, actionExecutionContext);
     return CppCompileActionResult.builder().setSpawnResults(spawnResults).build();
   }

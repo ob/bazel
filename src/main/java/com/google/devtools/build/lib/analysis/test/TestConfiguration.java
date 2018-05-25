@@ -14,12 +14,13 @@
 
 package com.google.devtools.build.lib.analysis.test;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.Fragment;
+import com.google.devtools.build.lib.analysis.config.BuildConfiguration.LabelConverter;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.ConfigurationEnvironment;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
 import com.google.devtools.build.lib.analysis.config.FragmentOptions;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
@@ -36,6 +37,8 @@ import com.google.devtools.common.options.OptionsParsingException;
 import com.google.devtools.common.options.TriState;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /** Test-related options. */
 @AutoCodec
@@ -47,7 +50,6 @@ public class TestConfiguration extends Fragment {
       name = "test_filter",
       allowMultiple = false,
       defaultValue = "null",
-      category = "testing",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
       help =
@@ -59,7 +61,6 @@ public class TestConfiguration extends Fragment {
     @Option(
       name = "cache_test_results",
       defaultValue = "auto",
-      category = "testing",
       abbrev = 't', // it's useful to toggle this on/off quickly
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
@@ -78,7 +79,6 @@ public class TestConfiguration extends Fragment {
     @Option(
       name = "test_result_expiration",
       defaultValue = "-1", // No expiration by defualt.
-      category = "testing",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
       help = "This option is deprecated and has no effect."
@@ -89,7 +89,6 @@ public class TestConfiguration extends Fragment {
       name = "test_arg",
       allowMultiple = true,
       defaultValue = "",
-      category = "testing",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
       help =
@@ -103,7 +102,6 @@ public class TestConfiguration extends Fragment {
     @Option(
       name = "test_sharding_strategy",
       defaultValue = "explicit",
-      category = "testing",
       converter = TestActionBuilder.ShardingStrategyConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
@@ -121,7 +119,6 @@ public class TestConfiguration extends Fragment {
       name = "runs_per_test",
       allowMultiple = true,
       defaultValue = "1",
-      category = "testing",
       converter = RunsPerTestConverter.class,
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
@@ -139,12 +136,52 @@ public class TestConfiguration extends Fragment {
               + "This option can be passed multiple times. "
     )
     public List<PerLabelOptions> runsPerTest;
+
+    @Option(
+        name = "coverage_support",
+        converter = LabelConverter.class,
+        defaultValue = "@bazel_tools//tools/test:coverage_support",
+        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = {
+            OptionEffectTag.CHANGES_INPUTS,
+            OptionEffectTag.AFFECTS_OUTPUTS,
+            OptionEffectTag.LOADING_AND_ANALYSIS
+        },
+        help =
+            "Location of support files that are required on the inputs of every test action "
+                + "that collects code coverage. Defaults to '//tools/test:coverage_support'."
+    )
+    public Label coverageSupport;
+
+    @Option(
+        name = "coverage_report_generator",
+        converter = LabelConverter.class,
+        defaultValue = "@bazel_tools//tools/test:coverage_report_generator",
+        documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
+        effectTags = {
+            OptionEffectTag.CHANGES_INPUTS,
+            OptionEffectTag.AFFECTS_OUTPUTS,
+            OptionEffectTag.LOADING_AND_ANALYSIS
+        },
+        help =
+            "Location of the binary that is used to generate coverage reports. This must "
+                + "currently be a filegroup that contains a single file, the binary. Defaults to "
+                + "'//tools/test:coverage_report_generator'."
+    )
+    public Label coverageReportGenerator;
+
+    @Override
+    public Map<String, Set<Label>> getDefaultsLabels() {
+      return ImmutableMap.<String, Set<Label>>of(
+          "coverage_support", ImmutableSet.of(coverageSupport),
+          "coverage_report_generator", ImmutableSet.of(coverageReportGenerator));
+    }
   }
 
   /** Configuration loader for test options */
   public static class Loader implements ConfigurationFragmentFactory {
     @Override
-    public Fragment create(ConfigurationEnvironment env, BuildOptions buildOptions)
+    public Fragment create(BuildOptions buildOptions)
         throws InvalidConfigurationException {
       return new TestConfiguration(buildOptions.get(TestOptions.class));
     }
@@ -192,6 +229,14 @@ public class TestConfiguration extends Fragment {
 
   public TestActionBuilder.TestShardingStrategy testShardingStrategy() {
     return options.testShardingStrategy;
+  }
+
+  public Label getCoverageSupport(){
+    return options.coverageSupport;
+  }
+
+  public Label getCoverageReportGenerator(){
+    return options.coverageReportGenerator;
   }
 
   /**

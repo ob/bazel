@@ -61,7 +61,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.logging.Logger;
@@ -116,17 +115,6 @@ public class AndroidResourceProcessor {
       help = "Apk path of previous split (if any)."
     )
     public Path featureAfter;
-
-    @Option(
-      name = "annotationJar",
-      defaultValue = "null",
-      converter = ExistingPathConverter.class,
-      category = "tool",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help = "Annotation Jar for builder invocations."
-    )
-    public Path annotationJar;
 
     @Option(
       name = "androidJar",
@@ -310,7 +298,7 @@ public class AndroidResourceProcessor {
             variantType,
             customPackageForR,
             androidManifest,
-            true /* shouldZipDataBindingInfo */);
+            /* shouldZipDataBindingInfo= */ true);
 
     final Path assetsDir = primaryData.getAssetDir();
     if (publicResourcesOut != null) {
@@ -556,7 +544,7 @@ public class AndroidResourceProcessor {
   }
 
   public ResourceSymbols loadResourceSymbolTable(
-      Iterable<SymbolFileProvider> libraries,
+      Iterable<? extends SymbolFileProvider> libraries,
       String appPackageName,
       Path primaryRTxt,
       Multimap<String, ResourceSymbols> libMap)
@@ -568,7 +556,7 @@ public class AndroidResourceProcessor {
     ListeningExecutorService executorService =
         MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(numThreads));
     try (Closeable closeable = ExecutorServiceCloser.createWith(executorService)) {
-      for (Entry<String, ListenableFuture<ResourceSymbols>> entry :
+      for (Map.Entry<String, ListenableFuture<ResourceSymbols>> entry :
           ResourceSymbols.loadFrom(libraries, executorService, appPackageName).entries()) {
         libMap.put(entry.getKey(), entry.getValue().get());
       }
@@ -604,7 +592,7 @@ public class AndroidResourceProcessor {
       // Loop on all the package name, merge all the symbols to write, and write.
       for (String packageName : libSymbolMap.keySet()) {
         Collection<ResourceSymbols> symbols = libSymbolMap.get(packageName);
-        fullSymbolValues.writeSourcesTo(sourceOut, packageName, symbols, true /* finalFields */);
+        fullSymbolValues.writeSourcesTo(sourceOut, packageName, symbols, /* finalFields= */ true);
       }
     }
   }

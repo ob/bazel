@@ -22,6 +22,7 @@ load(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
     "http_file",
+    "http_jar",
 )
 ```
 
@@ -38,12 +39,6 @@ def _http_archive_impl(ctx):
   if ctx.attr.build_file and ctx.attr.build_file_content:
     ctx.fail("Only one of build_file and build_file_content can be provided.")
 
-  # These print statement is not only for debug, but it also ensures the file
-  # is referenced before the download is started; this is necessary till a
-  # proper fix for https://github.com/bazelbuild/bazel/issues/2700 is
-  # implemented. A proper could, e.g., be to ensure that all ctx.path of
-  # all the lables provided as arguments are present before the implementation
-  # function is called the first time.
   if ctx.attr.build_file:
     print("ctx.attr.build_file %s, path %s" %
           (str(ctx.attr.build_file), ctx.path(ctx.attr.build_file)))
@@ -77,6 +72,34 @@ def _http_file_impl(ctx):
   ctx.file("WORKSPACE", "workspace(name = \"{name}\")".format(name=ctx.name))
   ctx.file("file/BUILD", _HTTP_FILE_BUILD)
 
+_HTTP_JAR_BUILD = """
+package(default_visibility = ["//visibility:public"])
+
+java_import(
+  name = 'jar',
+  jars = ['downloaded.jar'],
+  visibility = ['//visibility:public'],
+)
+
+filegroup(
+  name = 'file',
+  srcs = ['downloaded.jar'],
+  visibility = ['//visibility:public'],
+)
+
+"""
+
+def _http_jar_impl(ctx):
+  """Implementation of the http_jar rule."""
+  all_urls = []
+  if ctx.attr.urls:
+    all_urls = ctx.attr.urls
+  if ctx.attr.url:
+    all_urls = [ctx.attr.url] + all_urls
+  ctx.download(all_urls, "jar/downloaded.jar", ctx.attr.sha256)
+  ctx.file("WORKSPACE", "workspace(name = \"{name}\")".format(name=ctx.name))
+  ctx.file("jar/BUILD", _HTTP_JAR_BUILD)
+
 
 _http_archive_attrs = {
     "url": attr.string(),
@@ -89,6 +112,8 @@ _http_archive_attrs = {
     "patches": attr.label_list(default=[]),
     "patch_tool": attr.string(default="patch"),
     "patch_cmds": attr.string_list(default=[]),
+    "workspace_file": attr.label(),
+    "workspace_file_content": attr.string(),
 }
 
 
@@ -154,6 +179,14 @@ Args:
   build_file_content: The content for the BUILD file for this repository.
 
     Either `build_file` or `build_file_content` can be specified.
+  workspace_file: The file to use as the `WORKSPACE` file for this repository.
+
+    Either `workspace_file` or `workspace_file_content` can be specified, or
+    neither, but not both.
+  workspace_file_content: The content for the WORKSPACE file for this repository.
+
+    Either `workspace_file` or `workspace_file_content` can be specified, or
+    neither, but not both.
   sha256: The expected SHA-256 of the file downloaded.
 
     This must match the SHA-256 of the file downloaded. _It is a security risk
@@ -243,4 +276,42 @@ Args:
 
     Each entry must be an file, http or https URL. Redirections are followed.
     Authentication is not supported.
+"""
+
+http_jar = repository_rule(
+    implementation = _http_jar_impl,
+    attrs = {
+        "sha256": attr.string(),
+        "url": attr.string(),
+        "urls": attr.string_list(),
+    },
+)
+"""Downloads a jar from a URL and makes it available as java_import
+
+Downloaded files must have a .jar extension.
+
+Examples:
+  Suppose the current repository contains the source code for a chat program, rooted at the
+  directory `~/chat-app`. It needs to depend on an SSL library which is available from
+  `http://example.com/openssl-0.2.jar`.
+
+  Targets in the `~/chat-app` repository can depend on this target if the following lines are
+  added to `~/chat-app/WORKSPACE`:
+
+  ```python
+  http_jar(
+      name = "my_ssl",
+      url = "http://example.com/openssl-0.2.jar",
+      sha256 = "03a58ac630e59778f328af4bcc4acb4f80208ed4",
+  )
+  ```
+
+  Targets would specify <code>@my_ssl//jar</code> as a dependency to depend on this jar.
+
+
+Args:
+  name: A unique name for this rule.
+  sha256: The expected SHA-256 of the file downloaded.
+  url: The URL to fetch the jar from. It must end in `.jar`.
+  urls: A list of URLS the jar can be fetched from. They have to end in `.jar`.
 """

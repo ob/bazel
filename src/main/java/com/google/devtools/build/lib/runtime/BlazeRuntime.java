@@ -30,10 +30,8 @@ import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.ServerDirectories;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
-import com.google.devtools.build.lib.analysis.skylark.SkylarkActionFactory;
 import com.google.devtools.build.lib.analysis.test.CoverageReportActionFactory;
 import com.google.devtools.build.lib.buildeventstream.PathConverter;
-import com.google.devtools.build.lib.buildtool.BuildRequestOptions;
 import com.google.devtools.build.lib.clock.BlazeClock;
 import com.google.devtools.build.lib.clock.Clock;
 import com.google.devtools.build.lib.events.Event;
@@ -355,6 +353,25 @@ public final class BlazeRuntime {
     return blazeModules;
   }
 
+  public BuildOptions getDefaultBuildOptions() {
+    BuildOptions options = null;
+    for (BlazeModule module : blazeModules) {
+      BuildOptions optionsFromModule = module.getDefaultBuildOptions(this);
+      if (optionsFromModule != null) {
+        if (options == null) {
+          options = optionsFromModule;
+        } else {
+          throw new IllegalArgumentException(
+              "Two or more blaze modules contained default build options.");
+        }
+      }
+    }
+    if (options == null) {
+      throw new IllegalArgumentException("No default build options specified in any Blaze module");
+    }
+    return options;
+  }
+
   @SuppressWarnings("unchecked")
   public <T extends BlazeModule> T getBlazeModule(Class<T> moduleClass) {
     for (BlazeModule module : blazeModules) {
@@ -377,6 +394,10 @@ public final class BlazeRuntime {
   @Nullable
   public ProjectFile.Provider getProjectFileProvider() {
     return projectFileProvider;
+  }
+
+  public Path getOutputBase() {
+    return getWorkspace().getDirectories().getOutputBase();
   }
 
   /**
@@ -436,9 +457,12 @@ public final class BlazeRuntime {
     workspace.getSkyframeExecutor().getEventBus().post(new CommandCompleteEvent(exitCode));
   }
 
-  /** Hook method called by the BlazeCommandDispatcher after the dispatch of each command. */
+  /**
+   * Hook method called by the BlazeCommandDispatcher after the dispatch of each command. Returns a
+   * new exit code in case exceptions were encountered during cleanup.
+   */
   @VisibleForTesting
-  public void afterCommand(CommandEnvironment env, int exitCode) {
+  public int afterCommand(CommandEnvironment env, int exitCode) {
     // Remove any filters that the command might have added to the reporter.
     env.getReporter().setOutputFilter(OutputFilter.OUTPUT_EVERYTHING);
 
@@ -448,13 +472,23 @@ public final class BlazeRuntime {
       module.afterCommand();
     }
 
-    // If the command just completed was or inherits from Build, wipe the dependency graph if
-    // requested. This is sufficient, as this method is always run at the end of commands unless
-    // the server crashes, in which case no inmemory state will linger for the next build anyway.
-    BuildRequestOptions buildRequestOptions =
-        env.getOptions().getOptions(BuildRequestOptions.class);
-    if (buildRequestOptions != null && !buildRequestOptions.keepStateAfterBuild) {
+    // Wipe the dependency graph if requested. Note that this method always runs at the end of
+    // a commands unless the server crashes, in which case no inmemory state will linger for the
+    // next build anyway.
+    CommonCommandOptions commonOptions =
+        Preconditions.checkNotNull(env.getOptions().getOptions(CommonCommandOptions.class));
+    if (!commonOptions.keepStateAfterBuild) {
       workspace.getSkyframeExecutor().resetEvaluator();
+    }
+
+    // Build-related commands already call this hook in BuildTool#stopRequest, but non-build
+    // commands might also need to notify the SkyframeExecutor. It's called in #stopRequest so that
+    // timing metrics for builds can be more accurate (since this call can be slow).
+    try {
+      workspace.getSkyframeExecutor().notifyCommandComplete();
+    } catch (InterruptedException e) {
+      exitCode = ExitCode.INTERRUPTED.getNumericExitCode();
+      Thread.currentThread().interrupt();
     }
 
     env.getBlazeWorkspace().clearEventBus();
@@ -468,6 +502,7 @@ public final class BlazeRuntime {
     env.getReporter().clearEventBus();
 
     actionKeyContext.clear();
+    return exitCode;
   }
 
   // Make sure we keep a strong reference to this logger, so that the
@@ -925,11 +960,11 @@ public final class BlazeRuntime {
   /**
    * Parses the command line arguments into a {@link OptionsParser} object.
    *
-   *  <p>This function needs to parse the --option_sources option manually so that the real option
+   * <p>This function needs to parse the --option_sources option manually so that the real option
    * parser can set the source for every option correctly. If that cannot be parsed or is missing,
    * we just report an unknown source for every startup option.
    */
-  private static OptionsProvider parseOptions(
+  private static OptionsProvider parseStartupOptions(
       Iterable<BlazeModule> modules, List<String> args) throws OptionsParsingException {
     ImmutableList<Class<? extends OptionsBase>> optionClasses =
         BlazeCommandUtils.getStartupOptions(modules);
@@ -971,7 +1006,7 @@ public final class BlazeRuntime {
   private static BlazeRuntime newRuntime(Iterable<BlazeModule> blazeModules, List<String> args,
       Runnable abruptShutdownHandler)
       throws AbruptExitException, OptionsParsingException {
-    OptionsProvider options = parseOptions(blazeModules, args);
+    OptionsProvider options = parseStartupOptions(blazeModules, args);
     for (BlazeModule module : blazeModules) {
       module.globalInit(options);
     }
@@ -980,6 +1015,7 @@ public final class BlazeRuntime {
     String productName = startupOptions.productName.toLowerCase(Locale.US);
 
     PathFragment workspaceDirectory = startupOptions.workspaceDirectory;
+    PathFragment defaultSystemJavabase = startupOptions.defaultSystemJavabase;
     PathFragment outputUserRoot = startupOptions.outputUserRoot;
     PathFragment installBase = startupOptions.installBase;
     PathFragment outputBase = startupOptions.outputBase;
@@ -1024,6 +1060,10 @@ public final class BlazeRuntime {
     if (!workspaceDirectory.equals(PathFragment.EMPTY_FRAGMENT)) {
       workspaceDirectoryPath = fs.getPath(workspaceDirectory);
     }
+    Path defaultSystemJavabasePath = null;
+    if (!defaultSystemJavabase.equals(PathFragment.EMPTY_FRAGMENT)) {
+      defaultSystemJavabasePath = fs.getPath(defaultSystemJavabase);
+    }
 
     ServerDirectories serverDirectories =
         new ServerDirectories(
@@ -1051,7 +1091,6 @@ public final class BlazeRuntime {
       LoggingUtil.installRemoteLogger(getTestCrashLogger());
     }
 
-    runtimeBuilder.addBlazeModule(new BuiltinCommandModule());
     // This module needs to be registered before any module providing a SpawnCache implementation.
     runtimeBuilder.addBlazeModule(new NoSpawnCacheModule());
     runtimeBuilder.addBlazeModule(new CommandLogModule());
@@ -1062,7 +1101,8 @@ public final class BlazeRuntime {
     BlazeRuntime runtime = runtimeBuilder.build();
 
     BlazeDirectories directories =
-        new BlazeDirectories(serverDirectories, workspaceDirectoryPath, productName);
+        new BlazeDirectories(
+            serverDirectories, workspaceDirectoryPath, defaultSystemJavabasePath, productName);
     BinTools binTools;
     try {
       binTools = BinTools.forProduction(directories);
@@ -1072,7 +1112,8 @@ public final class BlazeRuntime {
           ExitCode.LOCAL_ENVIRONMENTAL_ERROR);
     }
     runtime.initWorkspace(directories, binTools);
-    CustomExitCodePublisher.setAbruptExitStatusFileDir(serverDirectories.getOutputBase());
+    CustomExitCodePublisher.setAbruptExitStatusFileDir(
+        serverDirectories.getOutputBase().getPathString());
 
     // Most static initializers for @SkylarkSignature-containing classes have already run by this
     // point, but this will pick up the stragglers.
@@ -1110,7 +1151,8 @@ public final class BlazeRuntime {
    * frozen at all for them. They just pay the cost of extra synchronization on every access.
    */
   private static void initSkylarkBuiltinsRegistry() {
-    SkylarkActionFactory.forceStaticInitialization();
+    // Currently no classes need to be initialized here. The hook's still here because it's
+    // possible it may be needed again in the future.
     com.google.devtools.build.lib.syntax.Runtime.getBuiltinRegistry().freeze();
   }
 
@@ -1259,8 +1301,7 @@ public final class BlazeRuntime {
 
       Package.Builder.Helper packageBuilderHelper = null;
       for (BlazeModule module : blazeModules) {
-        Package.Builder.Helper candidateHelper =
-            module.getPackageBuilderHelper(ruleClassProvider, fileSystem);
+        Package.Builder.Helper candidateHelper = module.getPackageBuilderHelper(ruleClassProvider);
         if (candidateHelper != null) {
           Preconditions.checkState(packageBuilderHelper == null,
               "more than one module defines a package builder helper");
@@ -1274,7 +1315,6 @@ public final class BlazeRuntime {
       PackageFactory packageFactory =
           new PackageFactory(
               ruleClassProvider,
-              ruleClassBuilder.getPlatformRegexps(),
               serverBuilder.getAttributeContainerFactory(),
               serverBuilder.getEnvironmentExtensions(),
               BlazeVersionInfo.instance().getVersion(),

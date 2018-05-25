@@ -18,7 +18,7 @@ import com.google.devtools.build.lib.concurrent.BlazeInterners;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
 import com.google.devtools.build.lib.rules.cpp.FdoSupport.FdoMode;
 import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.vfs.Path;
+import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.lib.view.config.crosstool.CrosstoolConfig.LipoMode;
 import com.google.devtools.build.skyframe.SkyFunctionName;
 import com.google.devtools.build.skyframe.SkyKey;
@@ -46,29 +46,46 @@ public class FdoSupportValue implements SkyValue {
     private static final Interner<Key> interner = BlazeInterners.newWeakInterner();
 
     private final LipoMode lipoMode;
-    private final Path fdoZip;
+    private final PathFragment fdoZip;
+    private final FdoInputFile fdoPrefetchHintsFile;
     private final String fdoInstrument;
     private final FdoMode fdoMode;
 
-    private Key(LipoMode lipoMode, Path fdoZip, String fdoInstrument, FdoMode fdoMode) {
+    private Key(
+        LipoMode lipoMode,
+        PathFragment fdoZip,
+        FdoInputFile fdoPrefetchHintsFile,
+        String fdoInstrument,
+        FdoMode fdoMode) {
       this.lipoMode = lipoMode;
       this.fdoZip = fdoZip;
+      this.fdoPrefetchHintsFile = fdoPrefetchHintsFile;
       this.fdoInstrument = fdoInstrument;
       this.fdoMode = fdoMode;
     }
 
     @AutoCodec.Instantiator
     @AutoCodec.VisibleForSerialization
-    static Key of(LipoMode lipoMode, Path fdoZip, String fdoInstrument, FdoMode fdoMode) {
-      return interner.intern(new Key(lipoMode, fdoZip, fdoInstrument, fdoMode));
+    static Key of(
+        LipoMode lipoMode,
+        PathFragment fdoZip,
+        FdoInputFile fdoPrefetchHintsFile,
+        String fdoInstrument,
+        FdoMode fdoMode) {
+      return interner.intern(
+          new Key(lipoMode, fdoZip, fdoPrefetchHintsFile, fdoInstrument, fdoMode));
     }
 
     public LipoMode getLipoMode() {
       return lipoMode;
     }
 
-    public Path getFdoZip() {
+    public PathFragment getFdoZip() {
       return fdoZip;
+    }
+
+    public FdoInputFile getFdoPrefetchHintsFile() {
+      return fdoPrefetchHintsFile;
     }
 
     public String getFdoInstrument() {
@@ -92,13 +109,14 @@ public class FdoSupportValue implements SkyValue {
       Key that = (Key) o;
       return Objects.equals(this.lipoMode, that.lipoMode)
           && Objects.equals(this.fdoZip, that.fdoZip)
+          && Objects.equals(this.fdoPrefetchHintsFile, that.fdoPrefetchHintsFile)
           && Objects.equals(this.fdoMode, that.fdoMode)
           && Objects.equals(this.fdoInstrument, that.fdoInstrument);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(lipoMode, fdoZip, fdoInstrument);
+      return Objects.hash(lipoMode, fdoZip, fdoPrefetchHintsFile, fdoInstrument);
     }
 
     @Override
@@ -118,7 +136,11 @@ public class FdoSupportValue implements SkyValue {
   }
 
   public static SkyKey key(
-      LipoMode lipoMode, Path fdoZip, String fdoInstrument, FdoMode fdoMode) {
-    return Key.of(lipoMode, fdoZip, fdoInstrument, fdoMode);
+      LipoMode lipoMode,
+      PathFragment fdoZip,
+      FdoInputFile fdoPrefetchHintsFile,
+      String fdoInstrument,
+      FdoMode fdoMode) {
+    return Key.of(lipoMode, fdoZip, fdoPrefetchHintsFile, fdoInstrument, fdoMode);
   }
 }

@@ -53,30 +53,12 @@ genquery(
     scope = ["//tools/defaults:java_toolchain"],
 )
 
-genrule(
-    name = "java-version",
-    srcs = [":java_toolchain_content"],
-    outs = ["java.version"],
-    cmd = """
-          VERSION_LINE=$$(cat $< | grep target_version);
-          JAVA_VERSION=$$(echo $${VERSION_LINE} | sed 's/.*value=\\"\\([^\\"]\\)\\".*/\\1/');
-          if [ -z "$${JAVA_VERSION}" ]; then
-            echo "1.8" >$@  # Java 8 is the default
-          elif [[ "$${JAVA_VERSION}" =~ ^[0-9]+$$ ]]; then
-            echo "1.$${JAVA_VERSION}" >$@  # Add 1. before 7 or 8
-          else
-            echo "$${JAVA_VERSION}" >$@
-          fi
-          """,
-)
-
 # Create dummy tools so we can do select to prevent building iOS target on
 # Linux.
 OSX_DUMMY_TARGETS = [
     "src/tools/xcode/actoolwrapper/actoolwrapper",
     "src/tools/xcode/ibtoolwrapper/ibtoolwrapper",
     "src/tools/xcode/momcwrapper/momcwrapper",
-    "src/tools/xcode/swiftstdlibtoolwrapper/swiftstdlibtoolwrapper",
     "src/objc_tools/bundlemerge/bundlemerge_deploy.jar",
     "src/objc_tools/plmerge/plmerge_deploy.jar",
     "src/tools/xcode/realpath/realpath",
@@ -99,7 +81,6 @@ filegroup(
         "//src/tools/xcode/actoolwrapper:actoolwrapper",
         "//src/tools/xcode/ibtoolwrapper:ibtoolwrapper",
         "//src/tools/xcode/momcwrapper:momcwrapper",
-        "//src/tools/xcode/swiftstdlibtoolwrapper:swiftstdlibtoolwrapper",
         "//src/objc_tools/bundlemerge:bundlemerge_deploy.jar",
         "//src/objc_tools/plmerge:plmerge_deploy.jar",
         "//src/tools/xcode/realpath:realpath",
@@ -139,7 +120,7 @@ py_binary(
         "//tools:embedded_tools_srcs",
         "//third_party:gpl-srcs",
         "//third_party/java/j2objc:embedded_tools_srcs",
-        "//third_party/java/jarjar:embedded_tools_srcs",
+        "//third_party/jarjar:embedded_tools_srcs",
         "//third_party/java/jdk/langtools:test-srcs",
         "//third_party/java/proguard:embedded_tools",
         "//third_party/py/concurrent:srcs",
@@ -259,7 +240,6 @@ genrule(
         "//src/main/tools:jdk-support",
         "//src/main/tools:linux-sandbox",
         "//tools/osx:xcode-locator",
-        ":java-version",
     ],
     outs = ["package" + suffix + ".zip"],
     cmd = "$(location :package-bazel.sh) $@ " + ("" if embed else "''") + " $(SRCS)",
@@ -350,6 +330,7 @@ filegroup(
         "//src/tools/android/java/com/google/devtools/build/android:srcs",
         "//src/tools/launcher:srcs",
         "//src/tools/runfiles:srcs",
+        "//src/tools/package_printer/java/com/google/devtools/build/packageprinter:srcs",
         "//src/tools/skylark/java/com/google/devtools/skylark/skylint:srcs",
         "//src/tools/skylark/javatests/com/google/devtools/skylark/skylint:srcs",
         "//src/tools/xcode/actoolwrapper:srcs",
@@ -358,7 +339,6 @@ filegroup(
         "//src/tools/xcode/realpath:srcs",
         "//src/tools/singlejar:srcs",
         "//src/tools/xcode/stdredirect:srcs",
-        "//src/tools/xcode/swiftstdlibtoolwrapper:srcs",
         "//src/tools/xcode-common:srcs",
         "//src/tools/remote:srcs",
         "//tools/osx:srcs",
@@ -371,14 +351,12 @@ genrule(
     srcs = [
         "//src/main/protobuf:dist_jars",
         "//src/main/java/com/google/devtools/build/lib/buildeventstream/proto:dist_jars",
+        "//src/main/java/com/google/devtools/build/lib/skylarkdebug/proto:dist_jars",
         "@googleapis//:dist_jars",
     ],
     outs = ["derived_java_srcs.zip"],
     cmd = "$(location :combine_derived_java_srcs.sh) $(JAVABASE) $@ $(SRCS)",
-    # Technically, this should be prefixed with @bazel_tools, but in order to
-    # avoid having to wait a Bazel release which has this target under
-    # @bazel_tools, we use it from the main repository. It's the same anyway.
-    toolchains = ["@bazel_tools//tools/jdk:current_java_runtime"],
+    toolchains = ["@bazel_tools//tools/jdk:current_host_java_runtime"],
     tools = ["combine_derived_java_srcs.sh"],
     visibility = ["//:__pkg__"],
 )
@@ -404,8 +382,7 @@ test_suite(
         "//src/test/java/com/google/devtools/common/options:all_windows_tests",
         "//src/test/native:all_windows_tests",
         "//src/test/py/bazel:all_windows_tests",
-        "//src/test/shell/bazel:bazel_bootstrap_distfile_test",
-        "//src/test/shell/bazel:bazel_windows_example_test",
+        "//src/test/shell:all_windows_tests",
         "//src/tools/launcher:all_windows_tests",
         "//src/tools/runfiles:all_windows_tests",
         "//third_party/def_parser:all_windows_tests",

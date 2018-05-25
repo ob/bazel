@@ -42,8 +42,6 @@ import com.google.devtools.build.lib.rules.objc.ObjcProvider.Key;
 import com.google.devtools.build.lib.skylarkinterface.Param;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkCallable;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
-import com.google.devtools.build.lib.skylarkinterface.SkylarkSignature;
-import com.google.devtools.build.lib.syntax.BuiltinFunction;
 import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.EvalException;
 import com.google.devtools.build.lib.syntax.Runtime;
@@ -51,7 +49,7 @@ import com.google.devtools.build.lib.syntax.SkylarkDict;
 import com.google.devtools.build.lib.syntax.SkylarkNestedSet;
 import com.google.devtools.build.lib.syntax.SkylarkSignatureProcessor;
 import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Map.Entry;
+import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -256,7 +254,7 @@ public class AppleSkylarkCommon {
             + "</pre>",
     structField = true
   )
-  public Provider getAppleStaticLibraryProvider() {
+  public AppleStaticLibraryInfo.Provider getAppleStaticLibraryProvider() {
     return AppleStaticLibraryInfo.SKYLARK_CONSTRUCTOR;
   }
 
@@ -290,18 +288,6 @@ public class AppleSkylarkCommon {
   )
   public Provider getAppleLoadableBundleBinaryConstructor() {
     return AppleLoadableBundleBinaryInfo.SKYLARK_CONSTRUCTOR;
-  }
-
-  @SkylarkCallable(
-    name = IosDeviceProvider.SKYLARK_NAME,
-    doc =
-        "<b>Deprecated. Use the new Skylark testing rules instead.</b> Returns the provider "
-            + "constructor for IosDeviceProvider. Use this as a key to access the attributes "
-            + "exposed by ios_device.",
-    structField = true
-  )
-  public Provider getIosDeviceProviderConstructor() {
-    return IosDeviceProvider.SKYLARK_CONSTRUCTOR;
   }
 
   @SkylarkCallable(
@@ -355,13 +341,10 @@ public class AppleSkylarkCommon {
     return new MultiArchSplitTransitionProvider();
   }
 
-  @SkylarkSignature(
+  @SkylarkCallable(
     name = "new_objc_provider",
-    objectType = AppleSkylarkCommon.class,
-    returnType = ObjcProvider.class,
     doc = "Creates a new ObjcProvider instance.",
     parameters = {
-      @Param(name = "self", type = AppleSkylarkCommon.class, doc = "The apple_common instance."),
       @Param(
         name = "uses_swift",
         type = Boolean.class,
@@ -380,37 +363,34 @@ public class AppleSkylarkCommon {
         ),
     useEnvironment = true
   )
-  public static final BuiltinFunction NEW_OBJC_PROVIDER =
-      new BuiltinFunction("new_objc_provider") {
-        @SuppressWarnings("unused")
-        // This method is registered statically for skylark, and never called directly.
-        public ObjcProvider invoke(
-            AppleSkylarkCommon self, Boolean usesSwift, SkylarkDict<String, Object> kwargs,
-            Environment environment) {
-          boolean disableObjcResourceKeys =
-              environment.getSemantics().incompatibleDisableObjcProviderResources();
-          ObjcProvider.Builder resultBuilder = new ObjcProvider.Builder();
-          if (usesSwift) {
-            resultBuilder.add(ObjcProvider.FLAG, ObjcProvider.Flag.USES_SWIFT);
-          }
-          for (Entry<String, Object> entry : kwargs.entrySet()) {
-            Key<?> key = ObjcProvider.getSkylarkKeyForString(entry.getKey());
-            if (key != null) {
-              if (disableObjcResourceKeys && ObjcProvider.isDeprecatedResourceKey(key)) {
-                throw new IllegalArgumentException(String.format(BAD_KEY_ERROR, entry.getKey()));
-              }
-              resultBuilder.addElementsFromSkylark(key, entry.getValue());
-            } else if (entry.getKey().equals("providers")) {
-              resultBuilder.addProvidersFromSkylark(entry.getValue());
-            } else if (entry.getKey().equals("direct_dep_providers")) {
-              resultBuilder.addDirectDepProvidersFromSkylark(entry.getValue());
-            } else {
-              throw new IllegalArgumentException(String.format(BAD_KEY_ERROR, entry.getKey()));
-            }
-          }
-          return resultBuilder.build();
+  // This method is registered statically for skylark, and never called directly.
+  public ObjcProvider newObjcProvider(
+      Boolean usesSwift,
+      SkylarkDict<?, ?> kwargs,
+      Environment environment) {
+    boolean disableObjcResourceKeys =
+        environment.getSemantics().incompatibleDisableObjcProviderResources();
+    ObjcProvider.Builder resultBuilder = new ObjcProvider.Builder(environment.getSemantics());
+    if (usesSwift) {
+      resultBuilder.add(ObjcProvider.FLAG, ObjcProvider.Flag.USES_SWIFT);
+    }
+    for (Map.Entry<?, ?> entry : kwargs.entrySet()) {
+      Key<?> key = ObjcProvider.getSkylarkKeyForString((String) entry.getKey());
+      if (key != null) {
+        if (disableObjcResourceKeys && ObjcProvider.isDeprecatedResourceKey(key)) {
+          throw new IllegalArgumentException(String.format(BAD_KEY_ERROR, entry.getKey()));
         }
-      };
+        resultBuilder.addElementsFromSkylark(key, entry.getValue());
+      } else if (entry.getKey().equals("providers")) {
+        resultBuilder.addProvidersFromSkylark(entry.getValue());
+      } else if (entry.getKey().equals("direct_dep_providers")) {
+        resultBuilder.addDirectDepProvidersFromSkylark(entry.getValue());
+      } else {
+        throw new IllegalArgumentException(String.format(BAD_KEY_ERROR, entry.getKey()));
+      }
+    }
+    return resultBuilder.build();
+  }
 
   @SkylarkCallable(
     name = "new_dynamic_framework_provider",

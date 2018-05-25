@@ -5,14 +5,10 @@ title: Windows
 
 # Using Bazel on Windows
 
-## Windows version requirements
+## <a name="install"></a>Installation
 
-Bazel is a native Windows binary.
-
-Bazel runs on 64 bit Windows 7 or higher, and on equivalent Windows Server
-versions. Check
-<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms724832(v=vs.85).aspx">Microsoft's
-Operating System Version table</a> to see if your OS is supported.
+See [Install Bazel on Windows](install-windows.html) for installation
+instructions.
 
 ## Known issues
 
@@ -27,62 +23,6 @@ You can also run Bazel from the MSYS2 shell, but you need to disable MSYS2's
 automatic path conversion. See [this StackOverflow
 answer](https://stackoverflow.com/a/49004265/7778502) for details.
 
-## <a name="requirements"></a>Software requirements
-
-*   Python 2.7 or later.
-
-    Use the Windows-native Python version. Do not use Python that comes with the
-    MSYS2 shell or that you installed in MSYS using Pacman because it doesn't
-    work with Bazel.
-
-*   [MSYS2 shell](https://msys2.github.io/).
-
-    You also need to set the `BAZEL_SH` environment variable to point to
-    `bash.exe`. For example in the Windows Command Prompt (`cmd.exe`):
-
-    ```
-    set BAZEL_SH=C:\tools\msys64\usr\bin\bash.exe
-    ```
-
-    **Note**: do not use quotes (") around the path like you would on Unixes.
-    Windows doesn't need them and it may confuse Bazel.
-
-*   Several MSYS2 packages.
-
-    Run the following command in the MSYS2 shell to install them:
-
-    ```bash
-    pacman -Syuu git curl zip unzip
-    ```
-
-*   Java JDK 8.
-
-    JDK 7 and 9 are not supported.
-
-    This step is not required if you downloaded a binary distribution of Bazel
-    because it has JDK 8 embedded.
-
-*   If you built Bazel from source: set the `JAVA_HOME` environment variable to
-    the JDK's directory.
-
-    For example in the Windows Command Prompt (`cmd.exe`):
-
-    ```
-    set JAVA_HOME=C:\Program Files\Java\jdk1.8.0_112
-    ```
-
-    **Note**: do not use quotes (") around the path like you would on Unix.
-    Windows doesn't need them and they may confuse Bazel.
-
-    This step is not required if you downloaded a binary distribution of Bazel
-    or installed Bazel using Chocolatey. See [installing Bazel on
-    Windows](install-windows.html).
-
-*   [Microsoft Visual C++ Redistributable for Visual Studio 2015](https://www.microsoft.com/en-us/download/details.aspx?id=48145)
-
-    This may already be installed on your system.
-
-
 ## Setting environment variables
 
 Environment variables you set in the Windows Command Prompt (`cmd.exe`) are only
@@ -90,11 +30,6 @@ set in that command prompt session. If you start a new `cmd.exe`, you need to
 set the variables again. To always set the variables when `cmd.exe` starts, you
 can add them to the User variables or System variables in the `Control Panel >
 System Properties > Advanced > Environment Variables...` dialog box.
-
-## <a name="install"></a>Installation
-
-See [Install Bazel on Windows](install-windows.html) for installation
-instructions.
 
 ## <a name="using"></a>Using Bazel on Windows
 
@@ -125,9 +60,10 @@ To build C++ targets, you need:
     *   Install the [Visual C++ Build
         Tools 2015 or later](http://landinghub.visualstudio.com/visual-cpp-build-tools).
 
-        Due to a [known issue](https://github.com/bazelbuild/bazel/issues/3949) with
-        Bazel's support for the Build Tools for Visual Studio 2017, we currently
-        recommend using the 2015 version instead.
+        If [alwayslink](be/c-cpp.html#cc_library.alwayslink) doesn't work with
+        VS 2017, that is due to a
+        [known issue](https://github.com/bazelbuild/bazel/issues/3949),
+        please upgrade your VS 2017 to the latest version.
 
 *   The `BAZEL_VS` or `BAZEL_VC` environment variable.
 
@@ -172,13 +108,10 @@ C:\projects\bazel> bazel-bin\examples\cpp\hello-world.exe
 
 There's no setup necessary.
 
-On Windows, Bazel builds three output files for `java_binary` rules:
+On Windows, Bazel builds two output files for `java_binary` rules:
 
 *   a `.jar` file
-*   a shell script that can set up the environment for the JVM and run the
-    binary
-*   a `.cmd` file (a batch script) that can call Bash with the aforementioned
-    shell script.
+*   a `.exe` file that can set up the environment for the JVM and run the binary
 
 Try building a target from one of our [sample
 projects](https://github.com/bazelbuild/bazel/tree/master/examples):
@@ -186,7 +119,7 @@ projects](https://github.com/bazelbuild/bazel/tree/master/examples):
 ```
 C:\projects\bazel> bazel build //examples/java-native/src/main/java/com/example/myproject:hello-world
 
-C:\projects\bazel> bazel-bin\examples\java-native\src\main\java\com\example\myproject\hello-world.cmd
+C:\projects\bazel> bazel-bin\examples\java-native\src\main\java\com\example\myproject\hello-world.exe
 ```
 
 ### Build Python
@@ -213,10 +146,10 @@ To build Python targets, you need:
 On Windows, Bazel builds two output files for `py_binary` rules:
 
 *   a self-extracting zip file
-*   a batch script that can execute the Python interpreter with the
+*   an executable file that can launch the Python interpreter with the
     self-extracting zip file as the argument
 
-You can either run the batch script (it has a `.cmd` extension) or you can run
+You can either run the executable file (it has a `.exe` extension) or you can run
 Python with the self-extracting zip file as the argument.
 
 Try building a target from one of our [sample
@@ -225,9 +158,9 @@ projects](https://github.com/bazelbuild/bazel/tree/master/examples):
 ```
 C:\projects\bazel> bazel build //examples/py_native:bin
 
-C:\projects\bazel> bazel-bin\examples\py_native\bin.cmd
+C:\projects\bazel> bazel-bin\examples\py_native\bin.exe
 
-C:\projects\bazel> python bazel-bin\examples\py_native\bin
+C:\projects\bazel> python bazel-bin\examples\py_native\bin.zip
 ```
 
 If you are interested in details about how Bazel builds Python targets on

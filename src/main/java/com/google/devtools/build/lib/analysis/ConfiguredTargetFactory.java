@@ -27,6 +27,7 @@ import com.google.devtools.build.lib.actions.FailAction;
 import com.google.devtools.build.lib.actions.MutableActionGraph.ActionConflictException;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.Fragment;
+import com.google.devtools.build.lib.analysis.config.BuildOptions;
 import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
 import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
@@ -76,7 +77,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -90,9 +90,12 @@ public final class ConfiguredTargetFactory {
   // in order to be accessible from the .view.skyframe package.
 
   private final ConfiguredRuleClassProvider ruleClassProvider;
+  private final BuildOptions defaultBuildOptions;
 
-  public ConfiguredTargetFactory(ConfiguredRuleClassProvider ruleClassProvider) {
+  public ConfiguredTargetFactory(
+      ConfiguredRuleClassProvider ruleClassProvider, BuildOptions defaultBuildOptions) {
     this.ruleClassProvider = ruleClassProvider;
+    this.defaultBuildOptions = defaultBuildOptions;
   }
 
   /**
@@ -174,7 +177,8 @@ public final class ConfiguredTargetFactory {
     ArtifactOwner owner =
         ConfiguredTargetKey.of(
             rule.getLabel(),
-            getArtifactOwnerConfiguration(analysisEnvironment.getSkyframeEnv(), configuration));
+            getArtifactOwnerConfiguration(
+                analysisEnvironment.getSkyframeEnv(), configuration, defaultBuildOptions));
     if (analysisEnvironment.getSkyframeEnv().valuesMissing()) {
       return null;
     }
@@ -190,11 +194,12 @@ public final class ConfiguredTargetFactory {
   }
 
   /**
-   * Returns the configuration's artifact owner (which may be null). Also returns null if the
-   * owning configuration isn't yet available from Skyframe.
+   * Returns the configuration's artifact owner (which may be null). Also returns null if the owning
+   * configuration isn't yet available from Skyframe.
    */
-  public static BuildConfiguration getArtifactOwnerConfiguration(SkyFunction.Environment env,
-      BuildConfiguration fromConfig) throws InterruptedException {
+  public static BuildConfiguration getArtifactOwnerConfiguration(
+      SkyFunction.Environment env, BuildConfiguration fromConfig, BuildOptions defaultBuildOptions)
+      throws InterruptedException {
     if (fromConfig == null) {
       return null;
     }
@@ -203,10 +208,14 @@ public final class ConfiguredTargetFactory {
       return fromConfig;
     }
     try {
-      BuildConfigurationValue ownerConfig = (BuildConfigurationValue) env.getValueOrThrow(
-          BuildConfigurationValue.key(
-              fromConfig.fragmentClasses(), ownerTransition.apply(fromConfig.getOptions())),
-          InvalidConfigurationException.class);
+      BuildConfigurationValue ownerConfig =
+          (BuildConfigurationValue)
+              env.getValueOrThrow(
+                  BuildConfigurationValue.key(
+                      fromConfig.fragmentClasses(),
+                      BuildOptions.diffForReconstruction(
+                          defaultBuildOptions, ownerTransition.patch(fromConfig.getOptions()))),
+                  InvalidConfigurationException.class);
       return ownerConfig == null ? null : ownerConfig.getConfiguration();
     } catch (InvalidConfigurationException e) {
       // We don't expect to have to handle an invalid configuration because in practice the owning
@@ -281,7 +290,7 @@ public final class ConfiguredTargetFactory {
       Artifact artifact =
           artifactFactory.getSourceArtifact(
               inputFile.getExecPath(),
-              ArtifactRoot.asSourceRoot(inputFile.getPackage().getSourceRoot()),
+              inputFile.getPackage().getSourceRoot(),
               ConfiguredTargetKey.of(target.getLabel(), config));
 
       return new InputFileConfiguredTarget(targetContext, inputFile, artifact);
@@ -329,7 +338,7 @@ public final class ConfiguredTargetFactory {
             .setVisibility(convertVisibility(prerequisiteMap, env.getEventHandler(), rule, null))
             .setPrerequisites(prerequisiteMap)
             .setConfigConditions(configConditions)
-            .setUniversalFragment(ruleClassProvider.getUniversalFragment())
+            .setUniversalFragments(ruleClassProvider.getUniversalFragments())
             .setToolchainContext(toolchainContext)
             .build();
     if (ruleContext.hasErrors()) {
@@ -356,7 +365,9 @@ public final class ConfiguredTargetFactory {
         // TODO(bazel-team): maybe merge with RuleConfiguredTargetBuilder?
         return SkylarkRuleConfiguredTargetUtil.buildRule(
             ruleContext,
+            rule.getRuleClassObject().getAdvertisedProviders(),
             rule.getRuleClassObject().getConfiguredTargetFunction(),
+            rule.getLocation(),
             env.getSkylarkSemantics());
       } else {
         RuleClass.ConfiguredTargetFactory<ConfiguredTarget, RuleContext, ActionConflictException>
@@ -451,7 +462,7 @@ public final class ConfiguredTargetFactory {
             .setPrerequisites(prerequisiteMap)
             .setAspectAttributes(aspectAttributes)
             .setConfigConditions(configConditions)
-            .setUniversalFragment(ruleClassProvider.getUniversalFragment())
+            .setUniversalFragments(ruleClassProvider.getUniversalFragments())
             .setToolchainContext(toolchainContext)
             .build();
     if (ruleContext.hasErrors()) {
@@ -481,7 +492,7 @@ public final class ConfiguredTargetFactory {
       for (Aspect underlyingAspect : aspectPath) {
         ImmutableMap<String, Attribute> currentAttributes = underlyingAspect.getDefinition()
             .getAttributes();
-        for (Entry<String, Attribute> kv : currentAttributes.entrySet()) {
+        for (Map.Entry<String, Attribute> kv : currentAttributes.entrySet()) {
           if (!aspectAttributes.containsKey(kv.getKey())) {
             aspectAttributes.put(kv.getKey(), kv.getValue());
           }

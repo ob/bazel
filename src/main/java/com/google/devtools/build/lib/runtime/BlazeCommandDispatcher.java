@@ -265,7 +265,7 @@ public class BlazeCommandDispatcher {
     // Record the command's starting time for use by the commands themselves.
     env.recordCommandStartTime(firstContactTime);
 
-    // Temporary: there is one module that outputs events during beforeCommand, but the reporter
+    // Temporary: there are modules that output events during beforeCommand, but the reporter
     // isn't setup yet. Add the stored event handler to catch those events.
     env.getReporter().addHandler(storedEventHandler);
     for (BlazeModule module : runtime.getBlazeModules()) {
@@ -489,7 +489,7 @@ public class BlazeCommandDispatcher {
       int numericExitCode = result.getExitCode() == null
           ? 0
           : result.getExitCode().getNumericExitCode();
-      runtime.afterCommand(env, numericExitCode);
+      numericExitCode = runtime.afterCommand(env, numericExitCode);
       // Swallow IOException, as we are already in a finally clause
       Flushables.flushQuietly(outErr.getOutputStream());
       Flushables.flushQuietly(outErr.getErrorStream());

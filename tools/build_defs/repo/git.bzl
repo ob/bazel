@@ -35,7 +35,7 @@ def _clone_or_update(ctx):
     shallow='--shallow-since=%s' % ctx.attr.shallow_since
 
   if (ctx.attr.verbose):
-    print('git.bzl: Cloning or updating%s repository %s using strip_prefix of [%s]' %
+    print('git.bzl: Cloning or updating %s repository %s using strip_prefix of [%s]' %
     (' (%s)' % shallow if shallow else '',
      ctx.name,
      ctx.attr.strip_prefix if ctx.attr.strip_prefix else 'None',
@@ -46,10 +46,10 @@ set -ex
 ( cd {working_dir} &&
     if ! ( cd '{dir_link}' && [[ "$(git rev-parse --git-dir)" == '.git' ]] ) >/dev/null 2>&1; then
       rm -rf '{directory}' '{dir_link}'
-      git clone {shallow} '{remote}' '{directory}'
+      git clone {shallow} '{remote}' '{directory}' || git clone '{remote}' '{directory}'
     fi
     cd '{directory}'
-    git reset --hard {ref} || (git fetch {shallow} origin {ref}:{ref} && git reset --hard {ref})
+    git reset --hard {ref} || ((git fetch {shallow} origin {ref}:{ref} || git fetch origin {ref}:{ref}) && git reset --hard {ref})
     git clean -xdf )
   """.format(
       working_dir=ctx.path('.').dirname,
@@ -113,6 +113,8 @@ new_git_repository = repository_rule(
     attrs = dict(_common_attrs.items() + {
         'build_file': attr.label(allow_single_file=True),
         'build_file_content': attr.string(),
+        'workspace_file': attr.label(),
+        'workspace_file_content': attr.string(),
     }.items())
 )
 """Clone an external git repository.
@@ -134,6 +136,14 @@ Args:
   build_file_content: The content for the BUILD file for this repository.
     Either build_file or build_file_content must be specified.
 
+  workspace_file: The file to use as the `WORKSPACE` file for this repository.
+
+    Either `workspace_file` or `workspace_file_content` can be specified, or
+    neither, but not both.
+  workspace_file_content: The content for the WORKSPACE file for this repository.
+
+    Either `workspace_file` or `workspace_file_content` can be specified, or
+    neither, but not both.
   tag: tag in the remote repository to checked out
 
   commit: specific commit to be checked out
@@ -178,11 +188,11 @@ Args:
   commit: specific commit to be checked out
     Either tag or commit must be specified.
 
-  shallow_since: an optional date, not after the specified commit; the
-    argument is not allowed if a tag is specified (which allows cloning
-    with depth 1). Setting such a date close to the specified commit
-    allows for a more shallow clone of the repository, saving bandwith and
-    wall-clock time.
+  shallow_since: an optional date in the form YYYY-MM-DD, not after
+    the specified commit; the argument is not allowed if a tag is specified
+    (which allows cloning with depth 1). Setting such a date close to the
+    specified commit allows for a more shallow clone of the repository, saving
+    bandwith and wall-clock time.
 
   strip_prefix: A directory prefix to strip from the extracted files.
 

@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.devtools.build.lib.actions.ActionEnvironment;
 import com.google.devtools.build.lib.actions.ActionExecutedEvent;
 import com.google.devtools.build.lib.actions.ActionExecutedEvent.ErrorTiming;
 import com.google.devtools.build.lib.actions.ActionExecutionException;
@@ -40,8 +41,9 @@ import com.google.devtools.build.lib.analysis.config.FragmentOptions;
 import com.google.devtools.build.lib.buildeventstream.AnnounceBuildEventTransportsEvent;
 import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
 import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventConverters;
+import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
 import com.google.devtools.build.lib.buildeventstream.BuildEventId;
+import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
 import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
 import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.NamedSetOfFilesId;
 import com.google.devtools.build.lib.buildeventstream.BuildEventTransport;
@@ -61,6 +63,7 @@ import com.google.devtools.build.lib.testutil.FoundationTestCase;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.lib.vfs.Root;
+import com.google.devtools.common.options.Options;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -102,7 +105,7 @@ public class BuildEventStreamerTest extends FoundationTestCase {
       events.add(event);
       eventsAsProtos.add(
           event.asStreamProto(
-              new BuildEventConverters() {
+              new BuildEventContext() {
                 @Override
                 public ArtifactGroupNamer artifactGroupNamer() {
                   return namer;
@@ -116,6 +119,11 @@ public class BuildEventStreamerTest extends FoundationTestCase {
                       return path.toString();
                     }
                   };
+                }
+
+                @Override
+                public BuildEventProtocolOptions getOptions() {
+                  return Options.getDefaults(BuildEventProtocolOptions.class);
                 }
               }));
     }
@@ -165,7 +173,7 @@ public class BuildEventStreamerTest extends FoundationTestCase {
     }
 
     @Override
-    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventConverters converters) {
+    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
       return GenericBuildEvent.protoChaining(this).build();
     }
 
@@ -209,7 +217,7 @@ public class BuildEventStreamerTest extends FoundationTestCase {
     }
 
     @Override
-    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventConverters converters) {
+    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
       BuildEventStreamProtos.NamedSetOfFiles.Builder builder =
           BuildEventStreamProtos.NamedSetOfFiles.newBuilder();
       for (NestedSet<Artifact> artifactset : artifacts) {
@@ -254,7 +262,7 @@ public class BuildEventStreamerTest extends FoundationTestCase {
     }
 
     @Override
-    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventConverters converters) {
+    public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext converters) {
       return GenericBuildEvent.protoChaining(this).build();
     }
   }
@@ -633,6 +641,9 @@ public class BuildEventStreamerTest extends FoundationTestCase {
     BuildEventStreamer streamer =
         new BuildEventStreamer(ImmutableSet.<BuildEventTransport>of(transport), reporter);
 
+    BuildOptions defaultBuildOptions =
+        BuildOptions.of(
+            ImmutableList.<Class<? extends FragmentOptions>>of(BuildConfiguration.Options.class));
     BuildEvent startEvent =
         new GenericBuildEvent(
             testId("Initial"),
@@ -642,12 +653,14 @@ public class BuildEventStreamerTest extends FoundationTestCase {
             new BlazeDirectories(
                 new ServerDirectories(outputBase, outputBase, outputBase),
                 rootDirectory,
+                /* defaultSystemJavabase= */ null,
                 "productName"),
-            ImmutableMap
+            /* fragmentsMap= */ ImmutableMap
                 .<Class<? extends BuildConfiguration.Fragment>, BuildConfiguration.Fragment>of(),
-            BuildOptions.of(
-                ImmutableList.<Class<? extends FragmentOptions>>of(
-                    BuildConfiguration.Options.class)),
+            defaultBuildOptions,
+            BuildOptions.diffForReconstruction(defaultBuildOptions, defaultBuildOptions),
+            /* reservedActionMnemonics= */ ImmutableSet.of(),
+            ActionEnvironment.EMPTY,
             "workspace");
     BuildEvent firstWithConfiguration =
         new GenericConfigurationEvent(testId("first"), configuration.toBuildEvent());

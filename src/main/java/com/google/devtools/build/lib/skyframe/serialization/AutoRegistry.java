@@ -14,9 +14,14 @@
 
 package com.google.devtools.build.lib.skyframe.serialization;
 
+import com.google.common.base.Predicates;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Ordering;
 import java.io.IOException;
+import java.util.Comparator;
 
 /**
  * A lazy, automatically populated registry.
@@ -29,15 +34,48 @@ public class AutoRegistry {
   private static final Supplier<ObjectCodecRegistry> SUPPLIER =
       Suppliers.memoize(AutoRegistry::create);
 
+  /* Common ancestor of common.google.devtools.build and com.google.devtools.common.options,
+   * where Tristate lives. */
+  private static final String PACKAGE_PREFIX = "com.google.devtools";
+
+  /** Class name prefixes to blacklist for {@link DynamicCodec}. */
+  private static final ImmutableList<String> CLASS_NAME_PREFIX_BLACKLIST =
+      ImmutableList.of(
+          "com.google.devtools.build.lib.vfs",
+          "com.google.devtools.build.lib.actions.ArtifactFactory");
+
+  /** Classes outside {@link AutoRegistry#PACKAGE_PREFIX} that need to be serialized. */
+  private static final ImmutableList<String> EXTERNAL_CLASS_NAMES_TO_REGISTER =
+      ImmutableList.of("java.io.FileNotFoundException", "java.io.IOException");
+
+  private static final ImmutableList<Object> REFERENCE_CONSTANTS_TO_REGISTER =
+      ImmutableList.of(
+          Predicates.alwaysTrue(),
+          Predicates.alwaysFalse(),
+          Predicates.isNull(),
+          Predicates.notNull(),
+          ImmutableList.of(),
+          ImmutableSet.of(),
+          Comparator.naturalOrder(),
+          Ordering.natural());
+
   public static ObjectCodecRegistry get() {
     return SUPPLIER.get();
   }
 
   private static ObjectCodecRegistry create() {
     try {
-      return CodecScanner.initializeCodecRegistry("com.google.devtools.build")
-          .setAllowDefaultCodec(false)
-          .build();
+      ObjectCodecRegistry.Builder registry = CodecScanner.initializeCodecRegistry(PACKAGE_PREFIX);
+      for (String className : EXTERNAL_CLASS_NAMES_TO_REGISTER) {
+        registry.addClassName(className);
+      }
+      for (Object constant : REFERENCE_CONSTANTS_TO_REGISTER) {
+        registry.addReferenceConstant(constant);
+      }
+      for (String classNamePrefix : CLASS_NAME_PREFIX_BLACKLIST) {
+        registry.blacklistClassNamePrefix(classNamePrefix);
+      }
+      return registry.build();
     } catch (IOException | ReflectiveOperationException e) {
       throw new IllegalStateException(e);
     }

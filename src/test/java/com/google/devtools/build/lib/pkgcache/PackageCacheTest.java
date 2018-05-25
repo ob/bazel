@@ -23,6 +23,7 @@ import com.google.devtools.build.lib.actions.ActionKeyContext;
 import com.google.devtools.build.lib.analysis.BlazeDirectories;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.ServerDirectories;
+import com.google.devtools.build.lib.analysis.config.BuildOptions;
 import com.google.devtools.build.lib.analysis.util.AnalysisMock;
 import com.google.devtools.build.lib.clock.BlazeClock;
 import com.google.devtools.build.lib.cmdline.Label;
@@ -85,19 +86,26 @@ public class PackageCacheTest extends FoundationTestCase {
         new BlazeDirectories(
             new ServerDirectories(outputBase, outputBase, outputBase),
             rootDirectory,
+            /* defaultSystemJavabase= */ null,
             analysisMock.getProductName());
     PackageFactory.BuilderForTesting packageFactoryBuilder =
         analysisMock.getPackageFactoryBuilderForTesting(directories);
     if (!doPackageLoadingChecks) {
       packageFactoryBuilder.disableChecks();
     }
+    BuildOptions defaultBuildOptions;
+    try {
+      defaultBuildOptions = BuildOptions.of(ImmutableList.of());
+    } catch (OptionsParsingException e) {
+      throw new RuntimeException(e);
+    }
     skyframeExecutor =
         SequencedSkyframeExecutor.create(
-            packageFactoryBuilder.build(ruleClassProvider, fileSystem),
+            packageFactoryBuilder.build(ruleClassProvider),
             fileSystem,
             directories,
             actionKeyContext,
-            null, /* workspaceStatusActionFactory */
+            /* workspaceStatusActionFactory= */ null,
             ruleClassProvider.getBuildInfoFactories(),
             ImmutableList.<DiffAwareness.Factory>of(),
             analysisMock.getSkyFunctions(directories),
@@ -106,7 +114,8 @@ public class PackageCacheTest extends FoundationTestCase {
             BazelSkyframeExecutorConstants.ADDITIONAL_BLACKLISTED_PACKAGE_PREFIXES_FILE,
             BazelSkyframeExecutorConstants.CROSS_REPOSITORY_LABEL_VIOLATION_STRATEGY,
             BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY,
-            BazelSkyframeExecutorConstants.ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE);
+            BazelSkyframeExecutorConstants.ACTION_ON_IO_EXCEPTION_READING_BUILD_FILE,
+            defaultBuildOptions);
     TestConstants.processSkyframeExecutorForTesting(skyframeExecutor);
     setUpSkyframe(parsePackageCacheOptions(), parseSkylarkSemanticsOptions());
   }
@@ -227,10 +236,10 @@ public class PackageCacheTest extends FoundationTestCase {
 
   @Test
   public void testGetPackageWithInvalidName() throws Exception {
-    scratch.file("invalidpackagename&42/BUILD", "cc_library(name = 'foo') # a BUILD file");
+    scratch.file("invalidpackagename:42/BUILD", "cc_library(name = 'foo') # a BUILD file");
     checkGetPackageFails(
-        "invalidpackagename&42",
-        "no such package 'invalidpackagename&42': Invalid package name 'invalidpackagename&42'");
+        "invalidpackagename:42",
+        "no such package 'invalidpackagename:42': Invalid package name 'invalidpackagename:42'");
   }
 
   @Test
@@ -479,8 +488,7 @@ public class PackageCacheTest extends FoundationTestCase {
   @Test
   public void testAddedBuildFileCausesLabelToBecomeInvalid() throws Exception {
     reporter.removeHandler(failFastHandler);
-    scratch.file(
-        "pkg/BUILD", "           cc_library(name = 'foo', ", "           srcs = ['x/y.cc'])");
+    scratch.file("pkg/BUILD", "cc_library(name = 'foo', srcs = ['x/y.cc'])");
 
     assertLabelValidity(true, "//pkg:x/y.cc");
 

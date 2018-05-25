@@ -76,6 +76,7 @@ import com.google.devtools.build.skyframe.Differencer;
 import com.google.devtools.build.skyframe.ErrorInfo;
 import com.google.devtools.build.skyframe.EvaluationProgressReceiver;
 import com.google.devtools.build.skyframe.EvaluationResult;
+import com.google.devtools.build.skyframe.GraphInconsistencyReceiver;
 import com.google.devtools.build.skyframe.ImmutableDiff;
 import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
 import com.google.devtools.build.skyframe.Injectable;
@@ -146,7 +147,10 @@ public abstract class AbstractPackageLoader implements PackageLoader {
       Path devNull = workspaceDir.getFileSystem().getPath("/dev/null");
       directories =
           new BlazeDirectories(
-              new ServerDirectories(installBase, outputBase, devNull), workspaceDir, "blaze");
+              new ServerDirectories(installBase, outputBase, devNull),
+              workspaceDir,
+              /* defaultSystemJavabase= */ null,
+              "blaze");
 
       this.pkgLocator =
           new PathPackageLocator(
@@ -333,11 +337,15 @@ public abstract class AbstractPackageLoader implements PackageLoader {
             makeFreshSkyFunctions(),
             preinjectedDifferencer,
             new EvaluationProgressReceiver.NullEvaluationProgressReceiver(),
+            GraphInconsistencyReceiver.THROWING,
             new MemoizingEvaluator.EmittedEventState(),
             /*keepEdges=*/ false));
   }
 
-  protected abstract String getName();
+  /**
+   * Version is the string BazelPackageLoader reports in native.bazel_version to be used by Skylark.
+   */
+  protected abstract String getVersion();
 
   protected abstract ImmutableList<EnvironmentExtension> getEnvironmentExtensions();
 
@@ -360,10 +368,9 @@ public abstract class AbstractPackageLoader implements PackageLoader {
     PackageFactory pkgFactory =
         new PackageFactory(
             ruleClassProvider,
-            null,
             AttributeContainer::new,
             getEnvironmentExtensions(),
-            getName(),
+            getVersion(),
             Package.Builder.DefaultHelper.INSTANCE);
     pkgFactory.setGlobbingThreads(legacyGlobbingThreads);
     pkgFactory.setSyscalls(syscallCacheRef);

@@ -123,6 +123,8 @@ public class GenQuery implements RuleConfiguredTargetFactory {
 
     // Parsed query options
     QueryOptions queryOptions = optionsParser.getOptions(QueryOptions.class);
+    // If you change the list of options here, also change the documentation of genquery.opts in
+    // GenQueryRule.java .
     if (optionsParser.getOptions(KeepGoingOption.class).keepGoing) {
       ruleContext.attributeError("opts", "option --keep_going is not allowed");
       return null;
@@ -309,6 +311,13 @@ public class GenQuery implements RuleConfiguredTargetFactory {
       formatter =
           OutputFormatter.getFormatter(
               OutputFormatter.getDefaultFormatters(), queryOptions.outputFormat);
+      if (formatter == null) {
+        ruleContext.ruleError(String.format(
+            "Invalid output format '%s'. Valid values are: %s",
+            queryOptions.outputFormat,
+            OutputFormatter.formatterNames(OutputFormatter.getDefaultFormatters())));
+        return null;
+      }
       // All the packages are already loaded at this point, so there is no need
       // to start up many threads. 4 are started up to make good use of multiple
       // cores.
@@ -317,6 +326,7 @@ public class GenQuery implements RuleConfiguredTargetFactory {
               QUERY_ENVIRONMENT_FACTORY.create(
                   /*transitivePackageLoader=*/ null,
                   /* graphFactory= */ null,
+                  packageProvider,
                   packageProvider,
                   evaluator,
                   /*keepGoing=*/ false,

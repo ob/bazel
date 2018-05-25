@@ -17,7 +17,6 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableList.Builder;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -45,11 +44,11 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.packages.BuildType;
+import com.google.devtools.build.lib.packages.BuiltinProvider;
 import com.google.devtools.build.lib.packages.Info;
 import com.google.devtools.build.lib.packages.NativeProvider;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.packages.TargetUtils;
-import com.google.devtools.build.lib.rules.cpp.CcCompilationInfo;
 import com.google.devtools.build.lib.rules.cpp.LinkerInput;
 import com.google.devtools.build.lib.rules.java.JavaCompilationArgs.ClasspathType;
 import com.google.devtools.build.lib.syntax.Type;
@@ -63,7 +62,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
 /**
@@ -106,10 +104,11 @@ public class JavaCommon {
       targetsTreatedAsDeps;
 
   private final ImmutableList<Artifact> sources;
-  private ImmutableList<JavaInfo> activePlugins = ImmutableList.of();
+  private ImmutableList<JavaPluginInfoProvider> activePlugins = ImmutableList.of();
 
   private final RuleContext ruleContext;
   private final JavaSemantics semantics;
+  private final JavaToolchainProvider javaToolchain;
   private JavaCompilationHelper javaCompilationHelper;
 
   public JavaCommon(RuleContext ruleContext, JavaSemantics semantics) {
@@ -146,6 +145,7 @@ public class JavaCommon {
       ImmutableList<TransitiveInfoCollection> runtimeDeps,
       ImmutableList<TransitiveInfoCollection> bothDeps) {
     this.ruleContext = ruleContext;
+    this.javaToolchain = JavaToolchainProvider.from(ruleContext);
     this.semantics = semantics;
     this.sources = sources;
     this.targetsTreatedAsDeps = ImmutableMap.of(
@@ -164,12 +164,11 @@ public class JavaCommon {
    */
   public static final void validateConstraint(RuleContext ruleContext,
       String constraint, Iterable<? extends TransitiveInfoCollection> targets) {
-    for (JavaConstraintProvider constraintProvider :
-        AnalysisUtils.getProviders(targets, JavaConstraintProvider.class)) {
-      if (!constraintProvider.getJavaConstraints().contains(constraint)) {
+    for (TransitiveInfoCollection target : targets) {
+      JavaInfo javaInfo = JavaInfo.getJavaInfo(target);
+      if (javaInfo != null && !javaInfo.getJavaConstraints().contains(constraint)) {
         ruleContext.attributeError("deps",
-            String.format("%s: does not have constraint '%s'",
-                constraintProvider.getLabel(), constraint));
+            String.format("%s: does not have constraint '%s'", target.getLabel(), constraint));
       }
     }
   }
@@ -216,8 +215,7 @@ public class JavaCommon {
 
   public NestedSet<Artifact> getProcessorClasspathJars() {
     NestedSetBuilder<Artifact> builder = NestedSetBuilder.naiveLinkOrder();
-    for (JavaPluginInfoProvider plugin :
-        JavaInfo.getProvidersFromListOfJavaProviders(JavaPluginInfoProvider.class, activePlugins)) {
+    for (JavaPluginInfoProvider plugin : activePlugins) {
       builder.addTransitive(plugin.getProcessorClasspath());
     }
     return builder.build();
@@ -225,8 +223,7 @@ public class JavaCommon {
 
   public ImmutableList<String> getProcessorClassNames() {
     Set<String> processorNames = new LinkedHashSet<>();
-    for (JavaPluginInfoProvider plugin :
-        JavaInfo.getProvidersFromListOfJavaProviders(JavaPluginInfoProvider.class, activePlugins)) {
+    for (JavaPluginInfoProvider plugin : activePlugins) {
       processorNames.addAll(plugin.getProcessorClasses());
     }
     return ImmutableList.copyOf(processorNames);
@@ -269,16 +266,39 @@ public class JavaCommon {
    */
   public JavaCompilationArgs collectJavaCompilationArgs(
       boolean recursive, boolean isNeverLink, boolean srcLessDepsExport) {
-    return JavaLibraryHelper.getJavaCompilationArgs(
-        JavaCompilationArgsHelper.builder()
-            .setRecursive(recursive)
-            .setIsNeverLink(isNeverLink)
-            .setSrcLessDepsExport(srcLessDepsExport)
-            .setCompilationArtifacts(getJavaCompilationArtifacts())
-            .setDeps(targetsTreatedAsDeps(ClasspathType.COMPILE_ONLY))
-            .setRuntimeDeps(getRuntimeDeps(ruleContext))
-            .setExports(getExports(ruleContext))
-            .build());
+    return collectJavaCompilationArgs(
+        /* recursive= */ recursive,
+        /* isNeverLink= */ isNeverLink,
+        /* srcLessDepsExport= */ srcLessDepsExport,
+        getJavaCompilationArtifacts(),
+        ImmutableList.of(
+            JavaCompilationArgsProvider.legacyFromTargets(
+                targetsTreatedAsDeps(ClasspathType.COMPILE_ONLY))),
+        ImmutableList.of(
+            JavaCompilationArgsProvider.legacyFromTargets(getRuntimeDeps(ruleContext))),
+        ImmutableList.of(JavaCompilationArgsProvider.legacyFromTargets(getExports(ruleContext))));
+  }
+
+  static JavaCompilationArgs collectJavaCompilationArgs(
+      boolean recursive,
+      boolean isNeverLink,
+      boolean srcLessDepsExport,
+      JavaCompilationArtifacts compilationArtifacts,
+      List<JavaCompilationArgsProvider> deps,
+      List<JavaCompilationArgsProvider> runtimeDeps,
+      List<JavaCompilationArgsProvider> exports) {
+    ClasspathType type = isNeverLink ? ClasspathType.COMPILE_ONLY : ClasspathType.BOTH;
+    JavaCompilationArgs.Builder builder =
+        JavaCompilationArgs.builder()
+            .merge(compilationArtifacts, isNeverLink)
+            .addTransitiveCompilationArgs(exports, recursive, type);
+    // TODO(bazel-team): remove srcs-less behaviour after android_library users are refactored
+    if (recursive || srcLessDepsExport) {
+      builder
+          .addTransitiveCompilationArgs(deps, recursive, type)
+          .addTransitiveCompilationArgs(runtimeDeps, recursive, ClasspathType.RUNTIME_ONLY);
+    }
+    return builder.build();
   }
 
   /**
@@ -411,18 +431,6 @@ public class JavaCommon {
     );
   }
 
-  /** Collects transitive C++ dependencies. */
-  protected CcCompilationInfo collectTransitiveCppDeps() {
-    CcCompilationInfo.Builder builder = new CcCompilationInfo.Builder(ruleContext);
-    for (TransitiveInfoCollection dep : targetsTreatedAsDeps(ClasspathType.BOTH)) {
-      CcCompilationInfo ccCompilationInfo = dep.get(CcCompilationInfo.PROVIDER);
-      if (ccCompilationInfo != null) {
-        builder.mergeDependentCcCompilationInfo(ccCompilationInfo);
-      }
-    }
-    return builder.build();
-  }
-
   /**
    * Collects labels of targets and artifacts reached transitively via the "exports" attribute.
    */
@@ -445,41 +453,40 @@ public class JavaCommon {
 
   public final void initializeJavacOpts() {
     Preconditions.checkState(javacOpts == null);
-    javacOpts = computeJavacOpts(semantics.getExtraJavacOpts(ruleContext));
+    javacOpts = computeJavacOpts(getCompatibleJavacOptions());
+  }
+
+  /** Computes javacopts for the current rule. */
+  private ImmutableList<String> computeJavacOpts(Collection<String> extraRuleJavacOpts) {
+    return ImmutableList.<String>builder()
+        .addAll(computeToolchainJavacOpts(ruleContext, javaToolchain))
+        .addAll(extraRuleJavacOpts)
+        .addAll(ruleContext.getExpander().withDataLocations().tokenized("javacopts"))
+        .build();
   }
 
   /**
-   * For backwards compatibility, this method allows multiple calls to set the Javac opts. Do not
-   * use this.
+   * Returns the toolchain javacopts for the current rule, including global defaults as well as any
+   * per-package configuration.
    */
-  @Deprecated
-  public final void initializeJavacOpts(Iterable<String> extraJavacOpts) {
-    javacOpts = computeJavacOpts(extraJavacOpts);
-  }
-
-  private ImmutableList<String> computeJavacOpts(Iterable<String> extraJavacOpts) {
+  public static ImmutableList<String> computeToolchainJavacOpts(
+      RuleContext ruleContext, JavaToolchainProvider toolchain) {
     return Streams.concat(
-            toolchainJavacOpts(ruleContext),
-            Streams.stream(extraJavacOpts),
-            ruleContext.getExpander().withDataLocations().tokenized("javacopts").stream())
+            toolchain.getJavacOptions().stream(),
+            toolchain
+                .packageConfiguration()
+                .stream()
+                .filter(p -> p.matches(ruleContext.getLabel()))
+                .flatMap(p -> p.javacopts().stream()))
         .collect(toImmutableList());
-  }
-
-  private Stream<String> toolchainJavacOpts(RuleContext ruleContext) {
-    JavaToolchainProvider toolchain = JavaToolchainProvider.from(ruleContext);
-    return Stream.concat(
-        toolchain.getJavacOptions().stream(),
-        // Enable any javacopts from java_toolchain.packages that are configured for the current
-        // package.
-        toolchain
-            .packageConfiguration()
-            .stream()
-            .filter(p -> p.matches(ruleContext.getLabel()))
-            .flatMap(p -> p.javacopts().stream()));
   }
 
   public static PathFragment getHostJavaExecutable(RuleContext ruleContext) {
     return JavaRuntimeInfo.forHost(ruleContext).javaBinaryExecPath();
+  }
+
+  public static PathFragment getHostJavaExecutable(JavaRuntimeInfo javaRuntime) {
+    return javaRuntime.javaBinaryExecPath();
   }
 
   public static PathFragment getJavaExecutable(RuleContext ruleContext) {
@@ -590,7 +597,11 @@ public class JavaCommon {
   }
 
   public JavaTargetAttributes.Builder initCommon() {
-    return initCommon(ImmutableList.<Artifact>of(), semantics.getExtraJavacOpts(ruleContext));
+    return initCommon(ImmutableList.<Artifact>of(), getCompatibleJavacOptions());
+  }
+
+  private ImmutableList<String> getCompatibleJavacOptions() {
+    return semantics.getCompatibleJavacOptions(ruleContext, javaToolchain);
   }
 
   /**
@@ -604,7 +615,7 @@ public class JavaCommon {
   public JavaTargetAttributes.Builder initCommon(
       Collection<Artifact> extraSrcs, Iterable<String> extraJavacOpts) {
     Preconditions.checkState(javacOpts == null);
-    javacOpts = computeJavacOpts(extraJavacOpts);
+    javacOpts = computeJavacOpts(ImmutableList.copyOf(extraJavacOpts));
     activePlugins = collectPlugins();
 
     JavaTargetAttributes.Builder javaTargetAttributes = new JavaTargetAttributes.Builder(semantics);
@@ -615,9 +626,6 @@ public class JavaCommon {
     javaTargetAttributes.addSourceArtifacts(sources);
     javaTargetAttributes.addSourceArtifacts(extraSrcs);
     processRuntimeDeps(javaTargetAttributes);
-
-    semantics.commonDependencyProcessing(ruleContext, javaTargetAttributes,
-        targetsTreatedAsDeps(ClasspathType.COMPILE_ONLY));
 
     semantics.checkProtoDeps(ruleContext, targetsTreatedAsDeps(ClasspathType.BOTH));
 
@@ -665,7 +673,7 @@ public class JavaCommon {
 
   private static ImmutableList<TransitiveInfoCollection> collectTargetsTreatedAsDeps(
       RuleContext ruleContext, JavaSemantics semantics, ClasspathType type) {
-    ImmutableList.Builder<TransitiveInfoCollection> builder = new Builder<>();
+    ImmutableList.Builder<TransitiveInfoCollection> builder = new ImmutableList.Builder<>();
 
     if (!type.equals(ClasspathType.COMPILE_ONLY)) {
       builder.addAll(getRuntimeDeps(ruleContext));
@@ -748,14 +756,15 @@ public class JavaCommon {
     javaInfoBuilder.addProvider(JavaGenJarsProvider.class, genJarsProvider);
   }
 
-  /**
-   * Processes the sources of this target, adding them as messages or proper
-   * sources.
-   */
+  /** Processes the sources of this target, adding them as messages or proper sources. */
   private void processSrcs(JavaTargetAttributes.Builder attributes) {
-    for (MessageBundleProvider srcItem : ruleContext.getPrerequisites(
-        "srcs", Mode.TARGET, MessageBundleProvider.class)) {
-      attributes.addMessages(srcItem.getMessages());
+    List<? extends TransitiveInfoCollection> srcs =
+        ruleContext.getPrerequisites("srcs", Mode.TARGET);
+    for (TransitiveInfoCollection src : srcs) {
+      ImmutableList<Artifact> messages = MessageBundleInfo.getMessages(src);
+      if (messages != null) {
+        attributes.addMessages(messages);
+      }
     }
   }
 
@@ -765,11 +774,10 @@ public class JavaCommon {
   private void processRuntimeDeps(JavaTargetAttributes.Builder attributes) {
     List<TransitiveInfoCollection> runtimeDepInfo = getRuntimeDeps(ruleContext);
     checkRuntimeDeps(ruleContext, runtimeDepInfo);
-    JavaCompilationArgs args = JavaCompilationArgs.builder()
-        .addTransitiveTargets(runtimeDepInfo, true, ClasspathType.RUNTIME_ONLY)
-        .build();
-    attributes.addRuntimeClassPathEntries(args.getRuntimeJars());
-    attributes.addInstrumentationMetadataEntries(args.getInstrumentationMetadata());
+    JavaCompilationArgsProvider provider =
+        JavaCompilationArgsProvider.legacyFromTargets(runtimeDepInfo);
+    attributes.addRuntimeClassPathEntries(provider.getRuntimeJars());
+    attributes.addInstrumentationMetadataEntries(provider.getInstrumentationMetadata());
   }
 
   /**
@@ -788,9 +796,8 @@ public class JavaCommon {
    * to the given attributes. Plugins having repetitive names/paths will be added only once.
    */
   public static void addPlugins(
-      JavaTargetAttributes.Builder attributes, Iterable<JavaInfo> activePlugins) {
-    for (JavaPluginInfoProvider plugin :
-        JavaInfo.getProvidersFromListOfJavaProviders(JavaPluginInfoProvider.class, activePlugins)) {
+      JavaTargetAttributes.Builder attributes, Iterable<JavaPluginInfoProvider> activePlugins) {
+    for (JavaPluginInfoProvider plugin : activePlugins) {
       for (String name : plugin.getProcessorClasses()) {
         attributes.addProcessorName(name);
       }
@@ -805,8 +812,8 @@ public class JavaCommon {
     }
   }
 
-  private ImmutableList<JavaInfo> collectPlugins() {
-    List<JavaInfo> result = new ArrayList<>();
+  private ImmutableList<JavaPluginInfoProvider> collectPlugins() {
+    List<JavaPluginInfoProvider> result = new ArrayList<>();
     Iterables.addAll(result,
         getPluginInfoProvidersForAttribute(ruleContext, ":java_plugins", Mode.HOST));
     Iterables.addAll(result, getPluginInfoProvidersForAttribute(ruleContext, "plugins", Mode.HOST));
@@ -814,10 +821,11 @@ public class JavaCommon {
     return ImmutableList.copyOf(result);
   }
 
-  private static Iterable<JavaInfo> getPluginInfoProvidersForAttribute(
+  private static Iterable<JavaPluginInfoProvider> getPluginInfoProvidersForAttribute(
       RuleContext ruleContext, String attribute, Mode mode) {
     if (ruleContext.attributes().has(attribute, BuildType.LABEL_LIST)) {
-      return JavaInfo.getJavaInfosFromListOfTargets(ruleContext.getPrerequisites(attribute, mode));
+      return JavaInfo.getProvidersFromListOfTargets(
+          JavaPluginInfoProvider.class, ruleContext.getPrerequisites(attribute, mode));
     }
     return ImmutableList.of();
   }
@@ -853,10 +861,9 @@ public class JavaCommon {
   }
 
   public static JavaPluginInfoProvider getTransitivePlugins(RuleContext ruleContext) {
-    return JavaInfo.merge(Iterables.concat(
-            getPluginInfoProvidersForAttribute(ruleContext, "exported_plugins", Mode.HOST),
-            getPluginInfoProvidersForAttribute(ruleContext, "exports", Mode.TARGET)))
-        .getProvider(JavaPluginInfoProvider.class);
+    return JavaPluginInfoProvider.merge(Iterables.concat(
+        getPluginInfoProvidersForAttribute(ruleContext, "exported_plugins", Mode.HOST),
+        getPluginInfoProvidersForAttribute(ruleContext, "exports", Mode.TARGET)));
   }
 
   public static Runfiles getRunfiles(
@@ -913,6 +920,10 @@ public class JavaCommon {
     return AnalysisUtils.getProviders(getDependencies(), provider);
   }
 
+  /** Gets all the deps that implement a particular provider. */
+  public final <P extends Info> Iterable<P> getDependencies(BuiltinProvider<P> provider) {
+    return AnalysisUtils.getProviders(getDependencies(), provider);
+  }
 
   /**
    * Returns true if and only if this target has the neverlink attribute set to

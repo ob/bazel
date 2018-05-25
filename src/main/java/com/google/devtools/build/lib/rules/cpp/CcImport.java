@@ -68,7 +68,7 @@ public abstract class CcImport implements RuleConfiguredTargetFactory {
     CcToolchainProvider ccToolchain =
         CppHelper.getToolchainUsingDefaultCcToolchainAttribute(ruleContext);
     FeatureConfiguration featureConfiguration =
-        CcCommon.configureFeatures(ruleContext, ccToolchain);
+        CcCommon.configureFeaturesOrReportRuleError(ruleContext, ccToolchain);
     FdoSupportProvider fdoSupport =
         CppHelper.getFdoSupportUsingDefaultCcToolchainAttribute(ruleContext);
 
@@ -170,7 +170,7 @@ public abstract class CcImport implements RuleConfiguredTargetFactory {
 
     LinkingInfo linkingInfo =
         linkingHelper.link(
-            compilationInfo.getCcCompilationOutputs(), compilationInfo.getCcCompilationInfo());
+            compilationInfo.getCcCompilationOutputs(), compilationInfo.getCcCompilationContext());
 
     return new RuleConfiguredTargetBuilder(ruleContext)
         .addProviders(compilationInfo.getProviders())

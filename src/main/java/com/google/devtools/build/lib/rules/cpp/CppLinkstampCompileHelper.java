@@ -16,12 +16,11 @@ package com.google.devtools.build.lib.rules.cpp;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableList.Builder;
-import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableMap;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Variables;
+import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.regex.Pattern;
 
 /** Handles creation of CppCompileAction used to compile linkstamp sources. */
@@ -55,6 +54,7 @@ public class CppLinkstampCompileHelper {
             .addMandatoryInputs(compilationInputs)
             .setVariables(
                 getVariables(
+                    ruleContext,
                     sourceFile,
                     outputFile,
                     labelReplacement,
@@ -89,7 +89,7 @@ public class CppLinkstampCompileHelper {
       boolean codeCoverageEnabled) {
     String labelPattern = Pattern.quote("${LABEL}");
     String outputPathPattern = Pattern.quote("${OUTPUT_PATH}");
-    Builder<String> defines =
+    ImmutableList.Builder<String> defines =
         ImmutableList.<String>builder()
             .add("GPLATFORM=\"" + cppConfiguration + "\"")
             .add("BUILD_COVERAGE_ENABLED=" + (codeCoverageEnabled ? "1" : "0"))
@@ -124,7 +124,8 @@ public class CppLinkstampCompileHelper {
         .collect(ImmutableList.toImmutableList());
   }
 
-  private static Variables getVariables(
+  private static CcToolchainVariables getVariables(
+      RuleContext ruleContext,
       Artifact sourceFile,
       Artifact outputFile,
       String labelReplacement,
@@ -141,45 +142,31 @@ public class CppLinkstampCompileHelper {
     Preconditions.checkArgument(
         featureConfiguration.actionIsConfigured(CppCompileAction.LINKSTAMP_COMPILE));
 
-    Variables.Builder variables = new Variables.Builder(ccToolchainProvider.getBuildVariables());
-    // We need to force inclusion of build_info headers
-    variables.addStringSequenceVariable(
-        CcCommon.INCLUDES_VARIABLE_NAME,
+    return CompileBuildVariables.setupVariablesOrReportRuleError(
+        ruleContext,
+        featureConfiguration,
+        ccToolchainProvider,
+        sourceFile.getExecPathString(),
+        outputFile.getExecPathString(),
+        /* gcnoFile= */ null,
+        /* dwoFile= */ null,
+        /* ltoIndexingFile= */ null,
         buildInfoHeaderArtifacts
             .stream()
             .map(Artifact::getExecPathString)
-            .collect(ImmutableList.toImmutableList()));
-    // Input/Output files.
-    variables.addStringVariable(
-        CcCompilationHelper.SOURCE_FILE_VARIABLE_NAME, sourceFile.getExecPathString());
-    variables.addStringVariable(
-        CcCompilationHelper.OUTPUT_FILE_VARIABLE_NAME, outputFile.getExecPathString());
-    variables.addStringVariable(
-        CcCompilationHelper.OUTPUT_OBJECT_FILE_VARIABLE_NAME, outputFile.getExecPathString());
-    // Include directories for (normal includes with ".", empty quote- and system- includes).
-    variables.addStringSequenceVariable(
-        CcCompilationHelper.INCLUDE_PATHS_VARIABLE_NAME, ImmutableList.of("."));
-    variables.addStringSequenceVariable(
-        CcCompilationHelper.QUOTE_INCLUDE_PATHS_VARIABLE_NAME, ImmutableList.of());
-    variables.addStringSequenceVariable(
-        CcCompilationHelper.SYSTEM_INCLUDE_PATHS_VARIABLE_NAME, ImmutableList.of());
-    // Legacy flags coming from fields such as compiler_flag
-    variables.addLazyStringSequenceVariable(
-        CcCompilationHelper.LEGACY_COMPILE_FLAGS_VARIABLE_NAME,
-        CcCompilationHelper.getLegacyCompileFlagsSupplier(
-            cppConfiguration,
-            ccToolchainProvider,
-            sourceFile.getExecPathString(),
-            ImmutableSet.of()));
-    // Unfilterable flags coming from unfiltered_cxx_flag fields
-    variables.addLazyStringSequenceVariable(
-        CcCompilationHelper.UNFILTERED_COMPILE_FLAGS_VARIABLE_NAME,
-        CcCompilationHelper.getUnfilteredCompileFlagsSupplier(
-            ccToolchainProvider, ImmutableSet.of()));
-    // Collect all preprocessor defines, and in each replace ${LABEL} by labelReplacements, and
-    // ${OUTPUT_PATH} with outputPathReplacement.
-    variables.addStringSequenceVariable(
-        CcCompilationHelper.PREPROCESSOR_DEFINES_VARIABLE_NAME,
+            .collect(ImmutableList.toImmutableList()),
+        CcCompilationHelper.getCoptsFromOptions(cppConfiguration, sourceFile.getExecPathString()),
+        /* cppModuleMap= */ null,
+        needsPic,
+        /* fakeOutputFile= */ null,
+        fdoBuildStamp,
+        /* dotdFileExecPath= */ null,
+        /* variablesExtensions= */ ImmutableList.of(),
+        /* additionalBuildVariables= */ ImmutableMap.of(),
+        /* directModuleMaps= */ ImmutableList.of(),
+        /* includeDirs= */ ImmutableList.of(PathFragment.create(".")),
+        /* quoteIncludeDirs= */ ImmutableList.of(),
+        /* systemIncludeDirs= */ ImmutableList.of(),
         computeAllLinkstampDefines(
             labelReplacement,
             outputReplacement,
@@ -187,11 +174,5 @@ public class CppLinkstampCompileHelper {
             cppConfiguration,
             fdoBuildStamp,
             codeCoverageEnabled));
-    // For dynamic libraries, produce position independent code.
-    if (needsPic) {
-      variables.addStringVariable(CcCompilationHelper.PIC_VARIABLE_NAME, "");
-    }
-
-    return variables.build();
   }
 }

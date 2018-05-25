@@ -18,6 +18,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.devtools.build.lib.actions.BuildFailedException;
 import com.google.devtools.build.lib.actions.TestExecException;
 import com.google.devtools.build.lib.analysis.AnalysisPhaseCompleteEvent;
@@ -66,15 +67,20 @@ import com.google.devtools.build.lib.profiler.ProfilePhase;
 import com.google.devtools.build.lib.profiler.Profiler;
 import com.google.devtools.build.lib.runtime.BlazeRuntime;
 import com.google.devtools.build.lib.runtime.CommandEnvironment;
+import com.google.devtools.build.lib.skyframe.BuildConfigurationValue;
 import com.google.devtools.build.lib.util.AbruptExitException;
 import com.google.devtools.build.lib.util.ExitCode;
 import com.google.devtools.build.lib.util.RegexFilter;
 import com.google.devtools.common.options.OptionsParsingException;
 import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Provides the bulk of the implementation of the 'blaze build' command.
@@ -218,7 +224,9 @@ public class BuildTool {
         reportTargets(analysisResult);
 
         for (ConfiguredTarget target : analysisResult.getTargetsToSkip()) {
-          BuildConfiguration config = target.getConfiguration();
+          BuildConfiguration config =
+              env.getSkyframeExecutor()
+                  .getConfiguration(env.getReporter(), target.getConfigurationKey());
           Label label = target.getLabel();
           env.getEventBus().post(
               new AbortedEvent(
@@ -487,8 +495,31 @@ public class BuildTool {
     env.getEventBus().post(new AnalysisPhaseCompleteEvent(analysisResult.getTargetsToBuild(),
         view.getTargetsVisited(), timer.stop().elapsed(TimeUnit.MILLISECONDS),
         view.getAndClearPkgManagerStatistics()));
-    env.getEventBus().post(new TestFilteringCompleteEvent(analysisResult.getTargetsToBuild(),
-        analysisResult.getTargetsToTest()));
+    ImmutableSet<BuildConfigurationValue.Key> configurationKeys =
+        Stream.concat(
+                analysisResult
+                    .getTargetsToBuild()
+                    .stream()
+                    .map(ConfiguredTarget::getConfigurationKey)
+                    .distinct(),
+                analysisResult.getTargetsToTest() == null
+                    ? Stream.empty()
+                    : analysisResult
+                        .getTargetsToTest()
+                        .stream()
+                        .map(ConfiguredTarget::getConfigurationKey)
+                        .distinct())
+            .filter(Objects::nonNull)
+            .distinct()
+            .collect(ImmutableSet.toImmutableSet());
+    Map<BuildConfigurationValue.Key, BuildConfiguration> configurationMap =
+        env.getSkyframeExecutor().getConfigurations(env.getReporter(), configurationKeys);
+    env.getEventBus()
+        .post(
+            new TestFilteringCompleteEvent(
+                analysisResult.getTargetsToBuild(),
+                analysisResult.getTargetsToTest(),
+                configurationMap));
 
     // Check licenses.
     // We check licenses if the first target configuration has license checking enabled. Right now,
@@ -520,10 +551,29 @@ public class BuildTool {
     Preconditions.checkState((crash == null) || !exitCondition.equals(ExitCode.SUCCESS));
     result.setUnhandledThrowable(crash);
     result.setExitCondition(exitCondition);
+    InterruptedException ie = null;
+    try {
+      env.getSkyframeExecutor().notifyCommandComplete();
+    } catch (InterruptedException e) {
+      env.getReporter().handle(Event.error("Build interrupted during command completion"));
+      ie = e;
+    }
     // The stop time has to be captured before we send the BuildCompleteEvent.
     result.setStopTime(runtime.getClock().currentTimeMillis());
     env.getEventBus()
         .post(new BuildCompleteEvent(result, ImmutableList.of(BuildEventId.buildToolLogs())));
+    if (ie != null) {
+      if (exitCondition.equals(ExitCode.SUCCESS)) {
+        result.setExitCondition(ExitCode.INTERRUPTED);
+      } else if (!exitCondition.equals(ExitCode.INTERRUPTED)) {
+        logger.log(
+            Level.WARNING,
+            "Suppressed interrupted exception during stop request because already failing with exit"
+                + " code "
+                + exitCondition,
+            ie);
+      }
+    }
   }
 
   private void reportTargets(AnalysisResult analysisResult) {

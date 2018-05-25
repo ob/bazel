@@ -20,6 +20,7 @@ import static java.util.stream.Collectors.joining;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.devtools.build.lib.actions.ActionEnvironment;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionExecutionException;
 import com.google.devtools.build.lib.actions.ActionOwner;
@@ -59,8 +60,7 @@ public class FakeCppCompileAction extends CppCompileAction {
       ActionOwner owner,
       NestedSet<Artifact> allInputs,
       FeatureConfiguration featureConfiguration,
-      PathFragment crosstoolTopPathFragment,
-      CcToolchainFeatures.Variables variables,
+      CcToolchainVariables variables,
       Artifact sourceFile,
       boolean shouldScanIncludes,
       boolean shouldPruneModules,
@@ -74,8 +74,8 @@ public class FakeCppCompileAction extends CppCompileAction {
       Artifact outputFile,
       PathFragment tempOutputFile,
       DotdFile dotdFile,
-      ImmutableMap<String, String> localShellEnvironment,
-      CcCompilationInfo ccCompilationInfo,
+      ActionEnvironment env,
+      CcCompilationContext ccCompilationContext,
       CoptsFilter nocopts,
       Iterable<IncludeScannable> lipoScannables,
       CppSemantics cppSemantics,
@@ -86,7 +86,6 @@ public class FakeCppCompileAction extends CppCompileAction {
         owner,
         allInputs,
         featureConfiguration,
-        crosstoolTopPathFragment,
         variables,
         sourceFile,
         shouldScanIncludes,
@@ -100,11 +99,11 @@ public class FakeCppCompileAction extends CppCompileAction {
         prunableInputs,
         outputFile,
         dotdFile,
-        null,
-        null,
-        null,
-        null,
-        localShellEnvironment,
+        /* gcnoFile=*/ null,
+        /* dwoFile=*/ null,
+        /* ltoIndexingFile=*/ null,
+        /* optionalSourceFile=*/ null,
+        env,
         // We only allow inclusion of header files explicitly declared in
         // "srcs", so we only use declaredIncludeSrcs, not declaredIncludeDirs.
         // (Disallowing use of undeclared headers for cc_fake_binary is needed
@@ -112,13 +111,12 @@ public class FakeCppCompileAction extends CppCompileAction {
         // cc_fake_binary and for the negative compilation tests that depend on
         // the cc_fake_binary, and the runfiles must be determined at analysis
         // time, so they can't depend on the contents of the ".d" file.)
-        CcCompilationInfo.disallowUndeclaredHeaders(ccCompilationInfo),
+        CcCompilationContext.disallowUndeclaredHeaders(ccCompilationContext),
         nocopts,
         lipoScannables,
-        ImmutableList.<Artifact>of(),
+        /* additionalIncludeScanningRoots=*/ ImmutableList.of(),
         GUID,
         executionInfo,
-        ImmutableMap.<String, String>of(),
         CppCompileAction.CPP_COMPILE,
         cppSemantics,
         cppProvider,
@@ -161,9 +159,10 @@ public class FakeCppCompileAction extends CppCompileAction {
           new HeaderDiscovery.Builder()
               .setAction(this)
               .setSourceFile(getSourceFile())
-              .setDependencies(processDepset(execRoot, reply).getDependencies())
+              .setDependencies(
+                  processDepset(actionExecutionContext, execRoot, reply).getDependencies())
               .setPermittedSystemIncludePrefixes(getPermittedSystemIncludePrefixes(execRoot))
-              .setAllowedDerivedinputsMap(getAllowedDerivedInputsMap());
+              .setAllowedDerivedinputs(getAllowedDerivedInputs());
 
       if (needsIncludeValidation) {
         discoveryBuilder.shouldValidateInclusions();
@@ -184,16 +183,16 @@ public class FakeCppCompileAction extends CppCompileAction {
     // listed in the "srcs" of the cc_fake_binary or in the "srcs" of a cc_library that it
     // depends on.
     try {
-      validateInclusions(
-          discoveredInputs,
-          actionExecutionContext.getArtifactExpander(),
-          actionExecutionContext.getEventHandler());
+      validateInclusions(actionExecutionContext, discoveredInputs);
     } catch (ActionExecutionException e) {
       // TODO(bazel-team): (2009) make this into an error, once most of the current warnings
       // are fixed.
-      actionExecutionContext.getEventHandler().handle(Event.warn(
-          getOwner().getLocation(),
-          e.getMessage() + ";\n  this warning may eventually become an error"));
+      actionExecutionContext
+          .getEventHandler()
+          .handle(
+              Event.warn(
+                  getOwner().getLocation(),
+                  e.getMessage() + ";\n  this warning may eventually become an error"));
     }
 
     updateActionInputs(discoveredInputs);

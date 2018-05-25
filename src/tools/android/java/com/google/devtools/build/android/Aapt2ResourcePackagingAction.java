@@ -41,7 +41,6 @@ import java.util.List;
  *   java/com/google/build/android/Aapt2ResourcePackagingAction\
  *      --sdkRoot path/to/sdk\
  *      --aapt path/to/sdk/aapt\
- *      --annotationJar path/to/sdk/annotationJar\
  *      --adb path/to/sdk/adb\
  *      --zipAlign path/to/sdk/zipAlign\
  *      --androidJar path/to/sdk/androidJar\
@@ -105,7 +104,7 @@ public class Aapt2ResourcePackagingAction {
                   null /* cruncher. Aapt2 automatically chooses to crunch or not. */,
                   options.packageType,
                   options.symbolsOut,
-                  null /* rclassWriter */,
+                  /* rclassWriter= */ null,
                   dataDeserializer,
                   options.throwOnResourceConflict,
                   executorService)
@@ -118,12 +117,13 @@ public class Aapt2ResourcePackagingAction {
 
      
         profiler.startTask("compile");
-        final ResourceCompiler compiler =
-            ResourceCompiler.create(
-                executorService,
-                compiledResources,
-                aaptConfigOptions.aapt2,
-                aaptConfigOptions.buildToolsVersion);
+      final ResourceCompiler compiler =
+          ResourceCompiler.create(
+              executorService,
+              compiledResources,
+              aaptConfigOptions.aapt2,
+              aaptConfigOptions.buildToolsVersion,
+              aaptConfigOptions.generatePseudoLocale);
 
         CompiledResources compiled =
             options
@@ -174,6 +174,8 @@ public class Aapt2ResourcePackagingAction {
               .buildVersion(aaptConfigOptions.buildToolsVersion)
               .conditionalKeepRules(aaptConfigOptions.conditionalKeepRules == TriState.YES)
               .filterToDensity(options.densities)
+              .debug(aaptConfigOptions.debug)
+              .includeGeneratedLocales(aaptConfigOptions.generatePseudoLocale)
               .includeOnlyConfigs(aaptConfigOptions.resourceConfigs)
               .link(compiled)
               .copyPackageTo(options.packagePath)
@@ -184,13 +186,13 @@ public class Aapt2ResourcePackagingAction {
         profiler.recordEndOf("link");
         if (options.resourcesOutput != null) {
           profiler.startTask("package");
-          // The compiled resources and the merged resources should be the same.
-          // TODO(corysmith): Decompile or otherwise provide the exact resources in the apk.
-          ResourcesZip.fromApk(
-                  mergedAndroidData.getResourceDir(),
-                  packagedResources.getApk(),
-                  packagedResources.getResourceIds())
-              .writeTo(options.resourcesOutput, false /* compress */);
+        // The compiled resources and the merged resources should be the same.
+        // TODO(corysmith): Decompile or otherwise provide the exact resources in the apk.
+        ResourcesZip.fromApk(
+                mergedAndroidData.getResourceDir(),
+                packagedResources.getApk(),
+                packagedResources.getResourceIds())
+            .writeTo(options.resourcesOutput, /* compress= */ false);
           profiler.recordEndOf("package");
         }
       }

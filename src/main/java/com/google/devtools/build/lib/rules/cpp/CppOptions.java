@@ -127,9 +127,17 @@ public class CppOptions extends FragmentOptions {
   }
 
   @Option(
+      name = "experimental_allow_lipo",
+      defaultValue = "true",
+      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS},
+      metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
+      help = "Flag to roll out the removal of LIPO.")
+  public boolean allowLipo;
+
+  @Option(
     name = "crosstool_top",
     defaultValue = "@bazel_tools//tools/cpp:toolchain",
-    category = "version",
     converter = LabelConverter.class,
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {
@@ -144,7 +152,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "compiler",
     defaultValue = "null",
-    category = "version",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.EXECUTION},
     help = "The C++ compiler to use for compiling the target."
@@ -157,7 +164,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "cc_output_directory_tag",
     defaultValue = "",
-    category = "misc",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Specifies a suffix to be added to the configuration directory."
@@ -167,7 +173,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "glibc",
     defaultValue = "null",
-    category = "version",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -181,7 +186,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "start_end_lib",
     defaultValue = "true",
-    category = "strategy", // but also adds edges to the action graph
     documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -196,7 +200,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "interface_shared_objects",
     defaultValue = "true",
-    category = "strategy", // but also adds edges to the action graph
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -213,7 +216,6 @@ public class CppOptions extends FragmentOptions {
     name = "fission",
     defaultValue = "no",
     converter = FissionOptionConverter.class,
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -230,7 +232,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "build_test_dwp",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -243,33 +244,30 @@ public class CppOptions extends FragmentOptions {
     name = "dynamic_mode",
     defaultValue = "default",
     converter = DynamicModeConverter.class,
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
         "Determines whether C++ binaries will be linked dynamically.  'default' means "
-            + "blaze will choose whether to link dynamically.  'fully' means all libraries "
+            + "Bazel will choose whether to link dynamically.  'fully' means all libraries "
             + "will be linked dynamically. 'off' means that all libraries will be linked "
             + "in mostly static mode."
   )
   public DynamicMode dynamicMode;
 
   @Option(
-      name = "experimental_drop_fully_static_linking_mode",
-      defaultValue = "false",
-      category = "semantics",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
-      help =
-          "If enabled, bazel will not scan linkopts for -static. Rules have to define their fully"
-              + " static linking mode through 'link_fully_static_binary' feature."
+    name = "experimental_drop_fully_static_linking_mode",
+    defaultValue = "false",
+    documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+    effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
+    help =
+        "If enabled, Bazel will not scan linkopts for -static. Rules have to define their fully"
+            + " static linking mode through 'fully_static_link' feature."
   )
   public boolean dropFullyStaticLinkingMode;
 
   @Option(
     name = "experimental_link_compile_output_separately",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     metadataTags = {OptionMetadataTag.EXPERIMENTAL},
@@ -283,7 +281,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "force_pic",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -296,7 +293,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "force_ignore_dash_static",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "If set, '-static' options in the linkopts of cc_* rules will be ignored."
@@ -306,7 +302,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "process_headers_in_dependencies",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
     effectTags = {OptionEffectTag.EXECUTION},
     help =
@@ -331,7 +326,6 @@ public class CppOptions extends FragmentOptions {
     name = "copt",
     allowMultiple = true,
     defaultValue = "",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Additional options to pass to gcc."
@@ -341,7 +335,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "cxxopt",
     defaultValue = "",
-    category = "flags",
     allowMultiple = true,
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -353,7 +346,6 @@ public class CppOptions extends FragmentOptions {
     name = "conlyopt",
     allowMultiple = true,
     defaultValue = "",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Additional option to pass to gcc when compiling C source files."
@@ -363,7 +355,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "linkopt",
     defaultValue = "",
-    category = "flags",
     allowMultiple = true,
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -374,7 +365,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "ltoindexopt",
     defaultValue = "",
-    category = "flags",
     allowMultiple = true,
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -385,7 +375,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "ltobackendopt",
     defaultValue = "",
-    category = "flags",
     allowMultiple = true,
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -397,7 +386,6 @@ public class CppOptions extends FragmentOptions {
     name = "stripopt",
     allowMultiple = true,
     defaultValue = "",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Additional options to pass to strip when generating a '<name>.stripped' binary."
@@ -407,7 +395,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "custom_malloc",
     defaultValue = "null",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.CHANGES_INPUTS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -418,9 +405,23 @@ public class CppOptions extends FragmentOptions {
   public Label customMalloc;
 
   @Option(
+    name = "experimental_shortened_obj_file_path",
+    defaultValue = "false",
+    documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+    effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
+    help =
+        "When off, object files are generated at _objs/<target_name>/<source_package_path>/"
+            + "<source_base_name>.o, otherwise they are shortened to _objs/<target_name>/"
+            + "<source_base_name>.o. If there are multiple source files with the same base name, "
+            + "to avoid conflict, the object file path is _objs/<target_name>/<N>"
+            + "/<source_base_name>.o, where N = the source file's order among all source files "
+            + "with the same base name, N starts with 0."
+  )
+  public boolean shortenObjFilePath;
+
+  @Option(
     name = "legacy_whole_archive",
     defaultValue = "true",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -434,7 +435,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "strip",
     defaultValue = "sometimes",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -448,7 +448,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "fdo_instrument",
     defaultValue = "null",
-    category = "flags",
     implicitRequirements = {"--copt=-Wno-error"},
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
@@ -476,7 +475,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "fdo_optimize",
     defaultValue = "null",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -485,7 +483,8 @@ public class CppOptions extends FragmentOptions {
             + "an auto profile. This flag also accepts files specified as labels, for "
             + "example //foo/bar:file.afdo. Such labels must refer to input files; you may "
             + "need to add an exports_files directive to the corresponding package to make "
-            + "the file visible to Blaze. It also accepts a raw or an indexed LLVM profile file."
+            + "the file visible to Bazel. It also accepts a raw or an indexed LLVM profile file. "
+            + "This flag will be superseded by fdo_profile rule."
   )
   /**
    * Never read FDO/LIPO options directly. This is because {@link #lipoConfigurationState}
@@ -503,31 +502,35 @@ public class CppOptions extends FragmentOptions {
   }
 
   @Option(
-    name = "autofdo_lipo_data",
-    defaultValue = "false",
+    name = "fdo_prefetch_hints",
+    defaultValue = "null",
+    converter = LabelConverter.class,
     category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-    help =
-        "If true then the directory name for non-LIPO targets will have a "
-            + "'-lipodata' suffix in AutoFDO mode."
+    help = "Use cache prefetch hints."
   )
+  public Label fdoPrefetchHintsLabel;
+
   /**
-   * Never read FDO/LIPO options directly. This is because {@link #lipoConfigurationState}
-   * determines whether these options are actually "active" for this configuration. Instead, use the
-   * equivalent getter method, which takes that into account.
+   * Returns the --fdo_prefetch_hints value.
    */
-  public boolean autoFdoLipoDataForBuild;
+  public Label getFdoPrefetchHintsLabel() {
+    return fdoPrefetchHintsLabel;
+  }
 
   /**
    * Returns the --autofdo_lipo_data value for this configuration. This is false except for data
    * configurations under LIPO builds.
    */
   public boolean getAutoFdoLipoData() {
-    return enableLipoSettings()
-        ? autoFdoLipoDataForBuild
-        : lipoModeForBuild != LipoMode.OFF && fdoOptimizeForBuild != null && FdoSupport.isAutoFdo(
-            fdoOptimizeForBuild);
+    if (enableLipoSettings()) {
+      return false;
+    }
+
+    return lipoModeForBuild != LipoMode.OFF
+        && fdoOptimizeForBuild != null
+        && FdoSupport.isAutoFdo(fdoOptimizeForBuild);
   }
 
   @Option(
@@ -545,7 +548,6 @@ public class CppOptions extends FragmentOptions {
     name = "lipo",
     defaultValue = "off",
     converter = LipoModeConverter.class,
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -572,7 +574,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "lipo_context",
     defaultValue = "null",
-    category = "flags",
     converter = LabelConverter.class,
     implicitRequirements = {"--linkopt=-Wl,--warn-unresolved-symbols"},
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
@@ -659,10 +660,36 @@ public class CppOptions extends FragmentOptions {
   }
 
   @Option(
+    name = "fdo_profile",
+    defaultValue = "null",
+    category = "flags",
+    converter = LabelConverter.class,
+    documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+    effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
+    help = "The fdo_profile representing the profile to be used for optimization."
+  )
+  public Label fdoProfileLabel;
+
+  /**
+   * Returns the --fdo_optimize value if FDO is specified and active for this configuration, the
+   * default value otherwise.
+   */
+  public Label getFdoProfileLabel() {
+    return enableLipoSettings() ? fdoProfileLabel : null;
+  }
+
+  @Option(
+      name = "enable_fdo_profile_absolute_path",
+      defaultValue = "true",
+      documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
+      help = "If set, use of fdo_absolute_profile_path will raise an error.")
+  public boolean enableFdoProfileAbsolutePath;
+
+  @Option(
     name = "experimental_stl",
     converter = LabelConverter.class,
     defaultValue = "null",
-    category = "version",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS, OptionEffectTag.ACTION_COMMAND_LINES},
     metadataTags = {OptionMetadataTag.EXPERIMENTAL},
@@ -675,7 +702,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "save_temps",
     defaultValue = "false",
-    category = "what",
     documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
     effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -690,7 +716,6 @@ public class CppOptions extends FragmentOptions {
     allowMultiple = true,
     converter = PerLabelOptions.PerLabelOptionsConverter.class,
     defaultValue = "",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -713,7 +738,6 @@ public class CppOptions extends FragmentOptions {
     allowMultiple = true,
     converter = PerLabelOptions.PerLabelOptionsConverter.class,
     defaultValue = "",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -734,7 +758,6 @@ public class CppOptions extends FragmentOptions {
     name = "host_crosstool_top",
     defaultValue = "null",
     converter = LabelConverter.class,
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -743,7 +766,7 @@ public class CppOptions extends FragmentOptions {
     },
     help =
         "By default, the --crosstool_top and --compiler options are also used "
-            + "for the host configuration. If this flag is provided, Blaze uses the default libc "
+            + "for the host configuration. If this flag is provided, Bazel uses the default libc "
             + "and compiler for the given crosstool_top."
   )
   public Label hostCrosstoolTop;
@@ -752,7 +775,6 @@ public class CppOptions extends FragmentOptions {
     name = "host_copt",
     allowMultiple = true,
     defaultValue = "",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Additional options to pass to gcc for host tools."
@@ -763,7 +785,6 @@ public class CppOptions extends FragmentOptions {
     name = "host_cxxopt",
     allowMultiple = true,
     defaultValue = "",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help = "Additional options to pass to gcc for host tools."
@@ -771,31 +792,28 @@ public class CppOptions extends FragmentOptions {
   public List<String> hostCxxoptList;
 
   @Option(
-      name = "host_conlyopt",
-      allowMultiple = true,
-      defaultValue = "",
-      category = "flags",
-      documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
-      help = "Additional option to pass to gcc when compiling C source files for host tools."
+    name = "host_conlyopt",
+    allowMultiple = true,
+    defaultValue = "",
+    documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+    effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
+    help = "Additional option to pass to gcc when compiling C source files for host tools."
   )
   public List<String> hostConlyoptList;
 
   @Option(
-      name = "host_linkopt",
-      defaultValue = "",
-      category = "flags",
-      allowMultiple = true,
-      documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
-      effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
-      help = "Additional option to pass to gcc when linking host tools."
+    name = "host_linkopt",
+    defaultValue = "",
+    allowMultiple = true,
+    documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
+    effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
+    help = "Additional option to pass to gcc when linking host tools."
   )
   public List<String> hostLinkoptList;
 
   @Option(
     name = "grte_top",
     defaultValue = "null", // The default value is chosen by the toolchain.
-    category = "version",
     converter = LibcTopLabelConverter.class,
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -808,7 +826,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "host_grte_top",
     defaultValue = "null", // The default value is chosen by the toolchain.
-    category = "version",
     converter = LibcTopLabelConverter.class,
     documentationCategory = OptionDocumentationCategory.TOOLCHAIN,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
@@ -821,7 +838,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "output_symbol_counts",
     defaultValue = "false",
-    category = "flags",
     documentationCategory = OptionDocumentationCategory.OUTPUT_SELECTION,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -833,7 +849,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "experimental_inmemory_dotd_files",
     defaultValue = "false",
-    category = "experimental",
     documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -850,7 +865,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "prune_cpp_modules",
     defaultValue = "true",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
     effectTags = {
       OptionEffectTag.LOADING_AND_ANALYSIS,
@@ -864,7 +878,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "parse_headers_verifies_modules",
     defaultValue = "false",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.BUILD_TIME_OPTIMIZATION,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.CHANGES_INPUTS},
     help =
@@ -876,7 +889,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "experimental_omitfp",
     defaultValue = "false",
-    category = "semantics",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.ACTION_COMMAND_LINES, OptionEffectTag.AFFECTS_OUTPUTS},
     metadataTags = {OptionMetadataTag.EXPERIMENTAL},
@@ -889,7 +901,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "share_native_deps",
     defaultValue = "true",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.AFFECTS_OUTPUTS},
     help =
@@ -901,7 +912,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "strict_system_includes",
     defaultValue = "false",
-    category = "strategy",
     documentationCategory = OptionDocumentationCategory.INPUT_STRICTNESS,
     effectTags = {OptionEffectTag.LOADING_AND_ANALYSIS, OptionEffectTag.EAGERNESS_TO_EXIT},
     help =
@@ -925,7 +935,6 @@ public class CppOptions extends FragmentOptions {
   @Option(
     name = "experimental_use_llvm_covmap",
     defaultValue = "false",
-    category = "experimental",
     documentationCategory = OptionDocumentationCategory.OUTPUT_PARAMETERS,
     effectTags = {
       OptionEffectTag.CHANGES_INPUTS,
@@ -978,6 +987,7 @@ public class CppOptions extends FragmentOptions {
     host.useStartEndLib = useStartEndLib;
     host.stripBinaries = StripMode.ALWAYS;
     host.fdoOptimizeForBuild = null;
+    host.fdoProfileLabel = null;
     host.lipoModeForBuild = LipoMode.OFF;
     host.inmemoryDotdFiles = inmemoryDotdFiles;
 
@@ -999,14 +1009,14 @@ public class CppOptions extends FragmentOptions {
       }
     }
 
-    return ImmutableMap.of("CROSSTOOL", crosstoolLabels, "COVERAGE", ImmutableSet.<Label>of());
+    return ImmutableMap.of("CROSSTOOL", crosstoolLabels);
   }
 
   /**
    * Returns true if targets under this configuration should apply FDO.
    */
   public boolean isFdo() {
-    return getFdoOptimize() != null || getFdoInstrument() != null;
+    return getFdoOptimize() != null || getFdoInstrument() != null || getFdoProfileLabel() != null;
   }
 
   /**

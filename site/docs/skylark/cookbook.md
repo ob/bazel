@@ -1,9 +1,9 @@
 ---
 layout: documentation
-title: Extensions examples
+title: Extension Examples
 ---
 
-# Extensions examples
+# Extension Examples
 
 **Tip:** For further examples, see the [GitHub repository](https://github.com/bazelbuild/examples/tree/master/rules).
 

@@ -44,7 +44,6 @@ import com.google.devtools.build.lib.actions.CommandAction;
 import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.actions.ParameterFileWriteAction;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.CompilationMode;
 import com.google.devtools.build.lib.analysis.util.ScratchAttributeWriter;
@@ -120,6 +119,58 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         .containsAllOf("objc/a.m", "objc/hdr.h", "objc/private.h");
     assertThat(Artifact.toRootRelativePaths(compileA.getOutputs()))
         .containsExactly("objc/_objs/x/objc/a.o", "objc/_objs/x/objc/a.d");
+  }
+
+  @Test
+  public void testCompilesSourcesWithSameBaseNameWithNewObjPath() throws Exception {
+    useConfiguration("--experimental_shortened_obj_file_path=true");
+    createLibraryTargetWriter("//foo:lib")
+        .setAndCreateFiles("srcs", "a.m", "pkg1/a.m", "b.m")
+        .setAndCreateFiles("non_arc_srcs", "pkg2/a.m")
+        .write();
+
+    getConfiguredTarget("//foo:lib");
+
+    Artifact a0 = getBinArtifact("_objs/lib/arc/0/a.o", "//foo:lib");
+    Artifact a1 = getBinArtifact("_objs/lib/arc/1/a.o", "//foo:lib");
+    Artifact a2 = getBinArtifact("_objs/lib/non_arc/a.o", "//foo:lib");
+    Artifact b = getBinArtifact("_objs/lib/arc/b.o", "//foo:lib");
+
+    assertThat(getGeneratingAction(a0)).isNotNull();
+    assertThat(getGeneratingAction(a1)).isNotNull();
+    assertThat(getGeneratingAction(a2)).isNotNull();
+    assertThat(getGeneratingAction(b)).isNotNull();
+
+    assertThat(getGeneratingAction(a0).getInputs()).contains(getSourceArtifact("foo/a.m"));
+    assertThat(getGeneratingAction(a1).getInputs()).contains(getSourceArtifact("foo/pkg1/a.m"));
+    assertThat(getGeneratingAction(a2).getInputs()).contains(getSourceArtifact("foo/pkg2/a.m"));
+    assertThat(getGeneratingAction(b).getInputs()).contains(getSourceArtifact("foo/b.m"));
+  }
+
+  @Test
+  public void testCompilesSourcesWithSameBaseNameWithLegacyObjPath() throws Exception {
+    useConfiguration("--experimental_shortened_obj_file_path=false");
+    createLibraryTargetWriter("//foo:lib")
+        .setAndCreateFiles("srcs", "a.m", "pkg1/a.m", "b.m")
+        .setAndCreateFiles("non_arc_srcs", "pkg2/a.m")
+        .write();
+
+    getConfiguredTarget("//foo:lib");
+
+    Artifact a0 = getBinArtifact("_objs/lib/foo/a.o", "//foo:lib");
+    Artifact a1 = getBinArtifact("_objs/lib/foo/pkg1/a.o", "//foo:lib");
+    Artifact a2 = getBinArtifact("_objs/lib/foo/pkg2/a.o", "//foo:lib");
+    Artifact b = getBinArtifact("_objs/lib/foo/b.o", "//foo:lib");
+
+    assertThat(getGeneratingAction(a0)).isNotNull();
+    assertThat(getGeneratingAction(a1)).isNotNull();
+    assertThat(getGeneratingAction(a2)).isNotNull();
+    assertThat(getGeneratingAction(b)).isNotNull();
+
+    assertThat(getGeneratingAction(a0).getInputs()).contains(getSourceArtifact("foo/a.m"));
+    assertThat(getGeneratingAction(a1).getInputs()).contains(getSourceArtifact("foo/pkg1/a.m"));
+    assertThat(getGeneratingAction(a2).getInputs()).contains(getSourceArtifact("foo/pkg2/a.m"));
+    assertThat(getGeneratingAction(b).getInputs()).contains(getSourceArtifact("foo/b.m"));
   }
 
   @Test
@@ -1015,7 +1066,10 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         .setList("srcs", "a.m")
         .write();
     CppCompileAction compileAction = (CppCompileAction) compileAction("//lib:lib", "a.o");
-    assertThat(compileAction.discoverInputsFromDotdFiles(null, null, null)).isEmpty();
+    assertThat(
+            compileAction.discoverInputsFromDotdFiles(
+                new ActionExecutionContextBuilder().build(), null, null, null))
+        .isEmpty();
   }
 
   @Test
@@ -1171,9 +1225,9 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
     scratch.file("lib/b.m");
     scratch.file("lib/BUILD", "objc_library(name = 'lib1', srcs = ['a.m', 'b.m'])");
     ConfiguredTarget target = getConfiguredTarget("//lib:lib1");
-    Artifact objlist = getBinArtifact("lib1-archive.objlist", target);
-    ParameterFileWriteAction action = (ParameterFileWriteAction) getGeneratingAction(objlist);
-    assertThat(action.getContents())
+    Artifact lib = getBinArtifact("liblib1.a", target);
+    Action action = getGeneratingAction(lib);
+    assertThat(paramFileArgsForAction(action))
         .containsExactlyElementsIn(
             Artifact.toExecPaths(inputsEndingWith(archiveAction("//lib:lib1"), ".o")));
   }
@@ -1650,7 +1704,8 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
     createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write();
     CppCompileAction compileAction = (CppCompileAction) compileAction("//lib:lib", "a.o");
     try {
-      compileAction.discoverInputsFromDotdFiles(null, null, null);
+      compileAction.discoverInputsFromDotdFiles(
+          new ActionExecutionContextBuilder().build(), null, null, null);
       fail("Expected ActionExecutionException");
     } catch (ActionExecutionException expected) {
       assertThat(expected).hasMessageThat().contains("error while parsing .d file");
@@ -1711,7 +1766,7 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         ActionsTestUtil.getFirstArtifactEndingWith(cppLibLinkAction.getInputs(), ".o");
 
     CppCompileAction action = (CppCompileAction) getGeneratingAction(cppLibArtifact);
-    assertAppleSdkVersionEnv(action.getEnvironment());
+    assertAppleSdkVersionEnv(action.getIncompleteEnvironmentForTesting());
   }
 
   @Test
@@ -2011,5 +2066,20 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
     CommandAction compileAction = compileAction("//cc:lib", "a.o");
     assertThat(Artifact.toRootRelativePaths(compileAction.getPossibleInputsForTesting()))
         .contains("objc/objc_hdr.h");
+  }
+
+  @Test
+  public void testTextualHeaderPassedToCcLib() throws Exception {
+    ScratchAttributeWriter.fromLabelString(this, "cc_library", "//cc/txt_dep")
+        .setList("textual_hdrs", "hdr.h")
+        .write();
+    createLibraryTargetWriter("//objc:lib").setList("deps", "//cc/txt_dep").write();
+    ScratchAttributeWriter.fromLabelString(this, "cc_library", "//cc/lib")
+        .setList("srcs", "a.cc")
+        .setList("deps", "//objc:lib")
+        .write();
+    CommandAction compileAction = compileAction("//cc/lib", "a.o");
+    assertThat(Artifact.toRootRelativePaths(compileAction.getPossibleInputsForTesting()))
+        .contains("cc/txt_dep/hdr.h");
   }
 }

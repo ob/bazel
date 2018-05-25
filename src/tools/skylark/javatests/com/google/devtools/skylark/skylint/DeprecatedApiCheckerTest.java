@@ -46,7 +46,35 @@ public class DeprecatedApiCheckerTest {
         .contains("1:1-1:12: PACKAGE_NAME is deprecated");
     Truth.assertThat(findIssues("f = ctx.outputs.executable").toString())
         .contains("1:5-1:26: ctx.outputs.executable is deprecated");
+    Truth.assertThat(findIssues("css_filetype = FileType(['.css'])").toString())
+        .contains("1:16-1:23: FileType is deprecated");
 
     Truth.assertThat(findIssues("ctx.actions()")).isEmpty();
+  }
+
+  @Test
+  public void testRuleImplReturnValue() {
+    Truth.assertThat(
+            findIssues("def _impl(ctx): return struct()", "x = rule(implementation=_impl)")
+                .toString())
+        .contains("1:17-1:31: Avoid using the legacy provider syntax.");
+
+    Truth.assertThat(
+            findIssues(
+                    "def _impl(ctx):",
+                    "  if True: return struct()",
+                    "  return",
+                    "x = rule(_impl, attrs = {})")
+                .toString())
+        .contains("2:12-2:26: Avoid using the legacy provider syntax.");
+
+    Truth.assertThat(
+            findIssues(
+                "def _impl(): return struct()",
+                "def _impl2(): return []",
+                "x = rule(",
+                "  implementation=_impl2,",
+                ")"))
+        .isEmpty();
   }
 }

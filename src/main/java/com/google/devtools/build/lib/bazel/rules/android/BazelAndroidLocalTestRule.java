@@ -28,13 +28,13 @@ import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
 import com.google.devtools.build.lib.bazel.rules.java.BazelJavaRuleClasses.BaseJavaBinaryRule;
 import com.google.devtools.build.lib.packages.ImplicitOutputsFunction;
 import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.Builder;
 import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
 import com.google.devtools.build.lib.packages.SkylarkProviderIdentifier;
 import com.google.devtools.build.lib.packages.TriState;
 import com.google.devtools.build.lib.rules.android.AndroidFeatureFlagSetProvider;
 import com.google.devtools.build.lib.rules.android.AndroidLocalTestBaseRule;
 import com.google.devtools.build.lib.rules.config.ConfigFeatureFlagTransitionFactory;
+import com.google.devtools.build.lib.rules.cpp.CppRuleClasses;
 import com.google.devtools.build.lib.rules.java.JavaConfiguration;
 import com.google.devtools.build.lib.rules.java.JavaInfo;
 import com.google.devtools.build.lib.rules.java.JavaSemantics;
@@ -52,11 +52,13 @@ public class BazelAndroidLocalTestRule implements RuleDefinition {
           "java_library",
           "java_lite_proto_library");
 
-  static final ImplicitOutputsFunction ANDROID_ROBOLECTRIC_IMPLICIT_OUTPUTS =
-      fromFunctions(JavaSemantics.JAVA_BINARY_CLASS_JAR, JavaSemantics.JAVA_BINARY_SOURCE_JAR);
+  static final ImplicitOutputsFunction ANDROID_ROBOLECTRIC_IMPLICIT_OUTPUTS = fromFunctions(
+      JavaSemantics.JAVA_BINARY_CLASS_JAR,
+      JavaSemantics.JAVA_BINARY_SOURCE_JAR,
+      JavaSemantics.JAVA_BINARY_DEPLOY_JAR);
 
   @Override
-  public RuleClass build(Builder builder, RuleDefinitionEnvironment environment) {
+  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment environment) {
     return builder
         .requiresConfigurationFragments(JavaConfiguration.class)
         .setImplicitOutputsFunction(ANDROID_ROBOLECTRIC_IMPLICIT_OUTPUTS)
@@ -69,6 +71,9 @@ public class BazelAndroidLocalTestRule implements RuleDefinition {
                         ImmutableList.of(
                             SkylarkProviderIdentifier.forKey(JavaInfo.PROVIDER.getKey())))))
         .override(attr("$testsupport", LABEL).value(environment.getToolsLabel(JUNIT_TESTRUNNER)))
+        .add(
+            attr("$robolectric_implicit_classpath", LABEL_LIST)
+                .value(ImmutableList.of(environment.getToolsLabel("//tools/android:android_jar"))))
         .override(attr("stamp", TRISTATE).value(TriState.NO))
         .removeAttribute("$experimental_testsupport")
         .removeAttribute("classpath_resources")
@@ -82,6 +87,7 @@ public class BazelAndroidLocalTestRule implements RuleDefinition {
         .removeAttribute(":java_launcher")
         .cfg(
             new ConfigFeatureFlagTransitionFactory(AndroidFeatureFlagSetProvider.FEATURE_FLAG_ATTR))
+        .addRequiredToolchains(CppRuleClasses.ccToolchainTypeAttribute(environment))
         .build();
   }
 
@@ -119,10 +125,10 @@ To use Robolectric with <code>android_local_test</code>, add
 to your <code>WORKSPACE</code> file:
 <pre class="code">
 http_archive(
- name = "robolectric",
- urls = ["https://github.com/robolectric/robolectric/archive/&lt;COMMIT&gt;.tar.gz"],
- strip_prefix = "robolectric-&lt;COMMIT&gt;",
- sha256 = "&lt;HASH&gt;",
+    name = "robolectric",
+    urls = ["https://github.com/robolectric/robolectric/archive/&lt;COMMIT&gt;.tar.gz"],
+    strip_prefix = "robolectric-&lt;COMMIT&gt;",
+    sha256 = "&lt;HASH&gt;",
 )
 load("@robolectric//bazel:robolectric.bzl", "robolectric_repositories")
 robolectric_repositories()
@@ -152,7 +158,7 @@ android_library(
     name = "sample_test_lib",
     srcs = [
          "Lib.java",
-    ]
+    ],
     resource_files = glob(["res/**"]),
     manifest = "AndroidManifest.xml",
 )
@@ -166,5 +172,7 @@ android_library(
   <li><code><var>name</var>.jar</code>: A Java archive of the test.</li>
   <li><code><var>name</var>-src.jar</code>: An archive containing the sources
     ("source jar").</li>
+  <li><code><var>name</var>_deploy.jar</code>: A Java deploy archive suitable
+    for deployment (only built if explicitly requested).</li>
 </ul>
 <!-- #END_BLAZE_RULE.IMPLICIT_OUTPUTS --> */

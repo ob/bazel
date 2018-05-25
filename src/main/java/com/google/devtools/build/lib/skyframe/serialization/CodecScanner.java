@@ -27,11 +27,8 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.List;
-import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -54,64 +51,74 @@ public class CodecScanner {
    * @see CodecRegisterer
    */
   @SuppressWarnings("unchecked")
-  public static ObjectCodecRegistry.Builder initializeCodecRegistry(String packagePrefix)
+  static ObjectCodecRegistry.Builder initializeCodecRegistry(String packagePrefix)
       throws IOException, ReflectiveOperationException {
     log.info("Building ObjectCodecRegistry");
     ArrayList<Class<? extends ObjectCodec<?>>> codecs = new ArrayList<>();
     ArrayList<Class<? extends CodecRegisterer<?>>> registerers = new ArrayList<>();
-    List<ClassInfo> classInfos = getClassInfos(packagePrefix).collect(Collectors.toList());
-    getCodecs(classInfos)
-        .forEach(
-            type -> {
-              if (!ObjectCodec.class.equals(type)
-                  && ObjectCodec.class.isAssignableFrom(type)
-                  && !Modifier.isAbstract(type.getModifiers())) {
-                codecs.add((Class<? extends ObjectCodec<?>>) type);
-              } else if (!CodecRegisterer.class.equals(type)
-                  && CodecRegisterer.class.isAssignableFrom(type)) {
-                registerers.add((Class<? extends CodecRegisterer<?>>) type);
-              }
-            });
     ObjectCodecRegistry.Builder builder = ObjectCodecRegistry.newBuilder();
-    getMatchingClasses(
-            classInfos,
-            classInfo ->
-                classInfo
-                    .getSimpleName()
-                    .endsWith(CodecScanningConstants.REGISTERED_SINGLETON_SUFFIX))
+    getClassInfos(packagePrefix)
         .forEach(
-            type -> {
-              if (!RegisteredSingletonDoNotUse.class.isAssignableFrom(type)) {
-                return;
-              }
-              Field field;
-              try {
-                field =
-                    type.getDeclaredField(
-                        CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME);
-              } catch (NoSuchFieldException e) {
-                throw new IllegalStateException(
-                    type
-                        + " inherits from "
-                        + RegisteredSingletonDoNotUse.class
-                        + " but does not have a field "
-                        + CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME,
-                    e);
-              }
-              try {
-                builder.addConstant(
-                    Preconditions.checkNotNull(field.get(null), "%s %s", field, type));
-              } catch (IllegalAccessException e) {
-                throw new IllegalStateException(
-                    "Could not access field " + field + " for " + type, e);
+            classInfo -> {
+              if (classInfo.getName().endsWith("Codec")) {
+                processLikelyCodec(classInfo.load(), codecs);
+              } else if (classInfo.getName().endsWith("CodecRegisterer")) {
+                processLikelyRegisterer(classInfo.load(), registerers);
+              } else if (classInfo
+                  .getName()
+                  .endsWith(CodecScanningConstants.REGISTERED_SINGLETON_SUFFIX)) {
+                processLikelyConstant(classInfo.load(), builder);
+              } else {
+                builder.addClassName(classInfo.getName().intern());
               }
             });
 
     HashSet<Class<? extends ObjectCodec<?>>> alreadyRegistered =
         runRegisterers(builder, registerers);
-
     applyDefaultRegistration(builder, alreadyRegistered, codecs);
     return builder;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static void processLikelyCodec(
+      Class<?> type, ArrayList<Class<? extends ObjectCodec<?>>> codecs) {
+    if (!ObjectCodec.class.equals(type)
+        && ObjectCodec.class.isAssignableFrom(type)
+        && !Modifier.isAbstract(type.getModifiers())) {
+      codecs.add((Class<? extends ObjectCodec<?>>) type);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static void processLikelyRegisterer(
+      Class<?> type, ArrayList<Class<? extends CodecRegisterer<?>>> registerers) {
+    if (!CodecRegisterer.class.equals(type) && CodecRegisterer.class.isAssignableFrom(type)) {
+      registerers.add((Class<? extends CodecRegisterer<?>>) type);
+    }
+  }
+
+  private static void processLikelyConstant(Class<?> type, ObjectCodecRegistry.Builder builder) {
+    if (!RegisteredSingletonDoNotUse.class.isAssignableFrom(type)) {
+      return;
+    }
+    Field field;
+    try {
+      field = type.getDeclaredField(CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME);
+    } catch (NoSuchFieldException e) {
+      throw new IllegalStateException(
+          type
+              + " inherits from "
+              + RegisteredSingletonDoNotUse.class
+              + " but does not have a field "
+              + CodecScanningConstants.REGISTERED_SINGLETON_INSTANCE_VAR_NAME,
+          e);
+    }
+    try {
+      builder.addReferenceConstant(
+          Preconditions.checkNotNull(field.get(null), "%s %s", field, type));
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException("Could not access field " + field + " for " + type, e);
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -185,7 +192,7 @@ public class CodecScanner {
     throw new IllegalStateException(registererType + " doesn't directly implement CodecRegisterer");
   }
 
-  /** Return the {@link ClassInfo} objects matching {@code packagePrefix}, sorted by name. */
+  /** Return the {@link ClassInfo} objects matching {@code packagePrefix} sorted by name. */
   private static Stream<ClassInfo> getClassInfos(String packagePrefix) throws IOException {
     return ClassPath.from(ClassLoader.getSystemClassLoader())
         .getResources()
@@ -194,20 +201,5 @@ public class CodecScanner {
         .map(r -> (ClassInfo) r)
         .filter(c -> c.getPackageName().startsWith(packagePrefix))
         .sorted(Comparator.comparing(ClassInfo::getName));
-  }
-
-  /**
-   * Returns a stream of likely codec and registerer implementations.
-   *
-   * <p>Caller should do additional checks as this method only performs string matching.
-   */
-  private static Stream<Class<?>> getCodecs(List<ClassInfo> classInfos) {
-    return getMatchingClasses(
-        classInfos, c -> c.getName().endsWith("Codec") || c.getName().endsWith("CodecRegisterer"));
-  }
-
-  private static Stream<Class<?>> getMatchingClasses(
-      List<ClassInfo> classInfos, Predicate<ClassInfo> predicate) {
-    return classInfos.stream().filter(predicate).map(ClassInfo::load);
   }
 }

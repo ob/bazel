@@ -111,7 +111,10 @@ public class FilesystemValueCheckerTest {
                 BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
     BlazeDirectories directories =
         new BlazeDirectories(
-            new ServerDirectories(pkgRoot, pkgRoot, pkgRoot), pkgRoot, TestConstants.PRODUCT_NAME);
+            new ServerDirectories(pkgRoot, pkgRoot, pkgRoot),
+            pkgRoot,
+            /* defaultSystemJavabase= */ null,
+            TestConstants.PRODUCT_NAME);
     ExternalFilesHelper externalFilesHelper = ExternalFilesHelper.createForTesting(
         pkgLocator, ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS, directories);
     skyFunctions.put(SkyFunctions.FILE_STATE, new FileStateFunction(
@@ -138,7 +141,7 @@ public class FilesystemValueCheckerTest {
             TestRuleClassProvider.getRuleClassProvider(),
             TestConstants.PACKAGE_FACTORY_BUILDER_FACTORY_FOR_TESTING
                 .builder(directories)
-                .build(TestRuleClassProvider.getRuleClassProvider(), fs),
+                .build(TestRuleClassProvider.getRuleClassProvider()),
             directories));
     skyFunctions.put(SkyFunctions.EXTERNAL_PACKAGE, new ExternalPackageFunction());
 
@@ -740,7 +743,8 @@ public class FilesystemValueCheckerTest {
     return new ActionExecutionValue(
         artifactData,
         ImmutableMap.<Artifact, TreeArtifactValue>of(),
-        ImmutableMap.<Artifact, FileArtifactValue>of());
+        ImmutableMap.<Artifact, FileArtifactValue>of(),
+        /*outputSymlinks=*/ null);
   }
 
   private ActionExecutionValue actionValueWithEmptyDirectory(Artifact emptyDir) {
@@ -750,7 +754,8 @@ public class FilesystemValueCheckerTest {
     return new ActionExecutionValue(
         ImmutableMap.<Artifact, FileValue>of(),
         ImmutableMap.of(emptyDir, emptyValue),
-        ImmutableMap.<Artifact, FileArtifactValue>of());
+        ImmutableMap.<Artifact, FileArtifactValue>of(),
+        /*outputSymlinks=*/ null);
   }
 
   private ActionExecutionValue actionValueWithTreeArtifacts(List<TreeFileArtifact> contents) {
@@ -779,8 +784,11 @@ public class FilesystemValueCheckerTest {
       treeArtifactData.put(dirDatum.getKey(), TreeArtifactValue.create(dirDatum.getValue()));
     }
 
-    return new ActionExecutionValue(fileData, treeArtifactData,
-        ImmutableMap.<Artifact, FileArtifactValue>of());
+    return new ActionExecutionValue(
+        fileData,
+        treeArtifactData,
+        ImmutableMap.<Artifact, FileArtifactValue>of(),
+        /*outputSymlinks=*/ null);
   }
 
   @Test

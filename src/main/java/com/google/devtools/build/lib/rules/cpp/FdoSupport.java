@@ -116,10 +116,10 @@ import java.util.zip.ZipFile;
  *       .gcda files are added, too.
  * </ul>
  *
- * <p>If we do LIPO, the actual {@code CcCompilationInfo} for LIPO compilation actions is pieced
- * together from the {@code CcCompilationInfo} in LipoContextProvider and that of the rule being
- * compiled. (see {@link CcCompilationInfo#mergeForLipo}) This is so that the include files for the
- * extra LIPO sources are found and is, strictly speaking, incorrect, since it also changes the
+ * <p>If we do LIPO, the actual {@code CcCompilationContext} for LIPO compilation actions is pieced
+ * together from the {@code CcCompilationContext} in LipoContextProvider and that of the rule being
+ * compiled. (see {@link CcCompilationContext#mergeForLipo}) This is so that the include files for
+ * the extra LIPO sources are found and is, strictly speaking, incorrect, since it also changes the
  * declared include directories of the main source file, which in theory can result in the
  * compilation passing even though it should fail with undeclared inclusion errors.
  *
@@ -174,6 +174,7 @@ public class FdoSupport {
    * {@code null} if FDO optimization is disabled.  The profile file
    * can be a coverage ZIP or an AutoFDO feedback file.
    */
+  // TODO(lberki): this should be a PathFragment
   private final Path fdoProfile;
 
   /**
@@ -590,23 +591,37 @@ public class FdoSupport {
   }
 
   /**
-   * Configures a compile action builder by setting up command line options and
-   * auxiliary inputs according to the FDO configuration. This method does
-   * nothing If FDO is disabled.
+   * Configures a compile action builder by setting up command line options and auxiliary inputs
+   * according to the FDO configuration. This method does nothing If FDO is disabled.
    */
   @ThreadSafe
-  public void configureCompilation(CppCompileActionBuilder builder,
-      CcToolchainFeatures.Variables.Builder buildVariables, RuleContext ruleContext,
-      PathFragment sourceName, PathFragment sourceExecPath, boolean usePic,
-      FeatureConfiguration featureConfiguration, FdoSupportProvider fdoSupportProvider) {
+  public ImmutableMap<String, String> configureCompilation(
+      CppCompileActionBuilder builder,
+      RuleContext ruleContext,
+      PathFragment sourceName,
+      PathFragment sourceExecPath,
+      PathFragment outputName,
+      boolean usePic,
+      FeatureConfiguration featureConfiguration,
+      FdoSupportProvider fdoSupportProvider) {
+
+    ImmutableMap.Builder<String, String> variablesBuilder = ImmutableMap.builder();
+
+    if ((fdoSupportProvider != null)
+        && (fdoSupportProvider.getPrefetchHintsArtifact() != null)) {
+      variablesBuilder.put(
+          CompileBuildVariables.FDO_PREFETCH_HINTS_PATH.getVariableName(),
+          fdoSupportProvider.getPrefetchHintsArtifact().getExecPathString());
+    }
 
     // FDO is disabled -> do nothing.
     if ((fdoInstrument == null) && (fdoRoot == null)) {
-      return;
+      return ImmutableMap.of();
     }
 
     if (featureConfiguration.isEnabled(CppRuleClasses.FDO_INSTRUMENT)) {
-      buildVariables.addStringVariable("fdo_instrument_path", fdoInstrument);
+      variablesBuilder.put(
+          CompileBuildVariables.FDO_INSTRUMENT_PATH.getVariableName(), fdoInstrument);
     }
 
     // Optimization phase
@@ -614,54 +629,64 @@ public class FdoSupport {
       AnalysisEnvironment env = ruleContext.getAnalysisEnvironment();
       // Declare dependency on contents of zip file.
       if (env.getSkyframeEnv().valuesMissing()) {
-        return;
+        return ImmutableMap.of();
       }
-      Iterable<Artifact> auxiliaryInputs = getAuxiliaryInputs(
-          ruleContext, sourceName, sourceExecPath, usePic, fdoSupportProvider);
+      Iterable<Artifact> auxiliaryInputs =
+          getAuxiliaryInputs(
+              ruleContext, sourceName, sourceExecPath, outputName, usePic, fdoSupportProvider);
       builder.addMandatoryInputs(auxiliaryInputs);
       if (!Iterables.isEmpty(auxiliaryInputs)) {
         if (featureConfiguration.isEnabled(CppRuleClasses.AUTOFDO)) {
-          buildVariables.addStringVariable(
-              "fdo_profile_path", getAutoProfilePath(fdoProfile, fdoRootExecPath).getPathString());
+          variablesBuilder.put(
+              CompileBuildVariables.FDO_PROFILE_PATH.getVariableName(),
+              getAutoProfilePath(fdoProfile, fdoRootExecPath).getPathString());
         }
         if (featureConfiguration.isEnabled(CppRuleClasses.FDO_OPTIMIZE)) {
           if (fdoMode == FdoMode.LLVM_FDO) {
-            buildVariables.addStringVariable(
-                "fdo_profile_path", fdoSupportProvider.getProfileArtifact().getExecPathString());
+            variablesBuilder.put(
+                CompileBuildVariables.FDO_PROFILE_PATH.getVariableName(),
+                fdoSupportProvider.getProfileArtifact().getExecPathString());
           } else {
-            buildVariables.addStringVariable("fdo_profile_path", fdoRootExecPath.getPathString());
+            variablesBuilder.put(
+                CompileBuildVariables.FDO_PROFILE_PATH.getVariableName(),
+                fdoRootExecPath.getPathString());
           }
         }
       }
     }
+    return variablesBuilder.build();
   }
 
-  /**
-   * Returns the auxiliary files that need to be added to the {@link CppCompileAction}.
-   */
+  /** Returns the auxiliary files that need to be added to the {@link CppCompileAction}. */
   private Iterable<Artifact> getAuxiliaryInputs(
-      RuleContext ruleContext, PathFragment sourceName, PathFragment sourceExecPath, boolean usePic,
+      RuleContext ruleContext,
+      PathFragment sourceName,
+      PathFragment sourceExecPath,
+      PathFragment outputName,
+      boolean usePic,
       FdoSupportProvider fdoSupportProvider) {
     CcToolchainProvider toolchain =
         CppHelper.getToolchainUsingDefaultCcToolchainAttribute(ruleContext);
     LipoContextProvider lipoContextProvider =
         toolchain.isLLVMCompiler() ? null : CppHelper.getLipoContextProvider(ruleContext);
 
+    ImmutableSet.Builder<Artifact> auxiliaryInputs = ImmutableSet.builder();
+
+    if (fdoSupportProvider.getPrefetchHintsArtifact() != null) {
+      auxiliaryInputs.add(fdoSupportProvider.getPrefetchHintsArtifact());
+    }
     // If --fdo_optimize was not specified, we don't have any additional inputs.
     if (fdoProfile == null) {
-      return ImmutableSet.of();
+      return auxiliaryInputs.build();
     } else if (fdoMode == FdoMode.LLVM_FDO || fdoMode == FdoMode.AUTO_FDO) {
-      ImmutableSet.Builder<Artifact> auxiliaryInputs = ImmutableSet.builder();
       auxiliaryInputs.add(fdoSupportProvider.getProfileArtifact());
       if (lipoContextProvider != null) {
         auxiliaryInputs.addAll(getAutoFdoImports(ruleContext, sourceExecPath, lipoContextProvider));
       }
       return auxiliaryInputs.build();
     } else {
-      ImmutableSet.Builder<Artifact> auxiliaryInputs = ImmutableSet.builder();
-
       PathFragment objectName =
-          FileSystemUtils.replaceExtension(sourceName, usePic ? ".pic.o" : ".o");
+          FileSystemUtils.appendExtension(outputName, usePic ? ".pic.o" : ".o");
 
       Label lipoLabel = ruleContext.getLabel();
       auxiliaryInputs.addAll(
@@ -771,33 +796,38 @@ public class FdoSupport {
   }
 
   /**
-   * Adds the FDO profile output path to the variable builder.
-   * If FDO is disabled, no build variable is added.
+   * Adds the FDO profile output path to the variable builder. If FDO is disabled, no build variable
+   * is added.
    */
   @ThreadSafe
-  public void getLinkOptions(FeatureConfiguration featureConfiguration,
-      CcToolchainFeatures.Variables.Builder buildVariables
-      ) {
+  public void getLinkOptions(
+      FeatureConfiguration featureConfiguration, CcToolchainVariables.Builder buildVariables) {
     if (featureConfiguration.isEnabled(CppRuleClasses.FDO_INSTRUMENT)) {
       buildVariables.addStringVariable("fdo_instrument_path", fdoInstrument);
     }
   }
 
   /**
-   * Adds the AutoFDO profile path to the variable builder and returns the profile artifact.
-   * If AutoFDO is disabled, no build variable is added and returns null.
+   * Adds the AutoFDO profile path to the variable builder and returns the profile artifact. If
+   * AutoFDO is disabled, no build variable is added and returns null.
    */
   @ThreadSafe
-  public Artifact buildProfileForLtoBackend(FdoSupportProvider fdoSupportProvider,
+  public ProfileArtifacts buildProfileForLtoBackend(
+      FdoSupportProvider fdoSupportProvider,
       FeatureConfiguration featureConfiguration,
-      CcToolchainFeatures.Variables.Builder buildVariables, RuleContext ruleContext) {
+      CcToolchainVariables.Builder buildVariables,
+      RuleContext ruleContext) {
+    Artifact prefetch = fdoSupportProvider.getPrefetchHintsArtifact();
+    if (prefetch != null) {
+      buildVariables.addStringVariable("fdo_prefetch_hints_path", prefetch.getExecPathString());
+    }
     if (!featureConfiguration.isEnabled(CppRuleClasses.AUTOFDO)) {
-      return null;
+      return new ProfileArtifacts(null, prefetch);
     }
 
     Artifact profile = fdoSupportProvider.getProfileArtifact();
     buildVariables.addStringVariable("fdo_profile_path", profile.getExecPathString());
-    return profile;
+    return new ProfileArtifacts(profile, prefetch);
   }
 
   /**
@@ -810,20 +840,20 @@ public class FdoSupport {
   }
 
   public FdoSupportProvider createFdoSupportProvider(
-      RuleContext ruleContext, Artifact profileArtifact) {
+      RuleContext ruleContext, ProfileArtifacts profiles) {
     if (fdoRoot == null) {
-      return new FdoSupportProvider(this, null, null);
+      return new FdoSupportProvider(this, profiles, null);
     }
 
     if (fdoMode == FdoMode.LLVM_FDO) {
-      Preconditions.checkState(profileArtifact != null);
-      return new FdoSupportProvider(this, profileArtifact, null);
+      Preconditions.checkState(profiles != null && profiles.getProfileArtifact() != null);
+      return new FdoSupportProvider(this, profiles, null);
     }
 
     Preconditions.checkState(fdoPath != null);
     PathFragment profileRootRelativePath = getAutoProfileRootRelativePath(fdoProfile);
 
-    profileArtifact =
+    Artifact profileArtifact =
         ruleContext
             .getAnalysisEnvironment()
             .getDerivedArtifact(fdoPath.getRelative(profileRootRelativePath), fdoRoot);
@@ -837,7 +867,11 @@ public class FdoSupport {
       gcdaArtifacts.put(path, gcdaArtifact);
     }
 
-    return new FdoSupportProvider(this, profileArtifact, gcdaArtifacts.build());
+    return new FdoSupportProvider(
+        this,
+        new ProfileArtifacts(
+            profileArtifact, profiles == null ? null : profiles.getPrefetchHintsArtifact()),
+        gcdaArtifacts.build());
   }
 
   /**

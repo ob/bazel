@@ -59,6 +59,7 @@ cc_library(
     deps = [
         "//src/main/cpp/util",
         "//src/main/cpp/util:blaze_exit_code",
+        "//src/main/cpp/util:logging",
     ] + select({
         "//src/conditions:windows": ["//src/main/native/windows:lib-file"],
         "//conditions:default": [],
@@ -99,11 +100,13 @@ cc_binary(
     }),
     visibility = ["//src:__pkg__"],
     deps = [
+        ":bazel_startup_options",
         ":blaze_util",
         ":option_processor",
         ":startup_options",
         ":workspace_layout",
         "//src/main/cpp/util",
+        "//src/main/cpp/util:bazel_log_handler",
         "//src/main/cpp/util:errors",
         "//src/main/cpp/util:logging",
         "//src/main/cpp/util:strings",
@@ -148,6 +151,22 @@ cc_library(
         "//src/main/cpp/util",
         "//src/main/cpp/util:blaze_exit_code",
         "//src/main/cpp/util:errors",
+    ],
+)
+
+cc_library(
+    name = "bazel_startup_options",
+    srcs = ["bazel_startup_options.cc"],
+    hdrs = ["bazel_startup_options.h"],
+    visibility = [
+        "//src:__pkg__",
+        "//src/test/cpp:__pkg__",
+    ],
+    deps = [
+        ":blaze_util",
+        ":startup_options",
+        ":workspace_layout",
+        "//src/main/cpp/util:blaze_exit_code",
     ],
 )
 

@@ -82,6 +82,12 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
      * Fulfills {@link com.google.devtools.build.lib.actions.AbstractAction#getRawProgressMessage()}
      */
     String getRawProgressMessage();
+
+    /**
+     * Fulfills {@link AbstractFileWriteAction#isRemotable()}.
+     * @return
+     */
+    boolean isRemotable();
   }
 
   /**
@@ -137,8 +143,7 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
 
   @Override
   public boolean isRemotable() {
-    // There is little gain to remoting these, since they include absolute path names inline.
-    return false;
+    return manifestWriter.isRemotable();
   }
 
   /**
@@ -204,18 +209,18 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
     fp.addInt(symlinks.size());
     for (Map.Entry<PathFragment, Artifact> symlink : symlinks.entrySet()) {
       fp.addPath(symlink.getKey());
-      fp.addPath(symlink.getValue().getPath());
+      fp.addPath(symlink.getValue().getExecPath());
     }
     Map<PathFragment, Artifact> rootSymlinks = runfiles.getRootSymlinksAsMap(null);
     fp.addInt(rootSymlinks.size());
     for (Map.Entry<PathFragment, Artifact> rootSymlink : rootSymlinks.entrySet()) {
       fp.addPath(rootSymlink.getKey());
-      fp.addPath(rootSymlink.getValue().getPath());
+      fp.addPath(rootSymlink.getValue().getExecPath());
     }
 
     for (Artifact artifact : runfiles.getArtifacts()) {
       fp.addPath(artifact.getRootRelativePath());
-      fp.addPath(artifact.getPath());
+      fp.addPath(artifact.getExecPath());
     }
   }
 
@@ -255,6 +260,12 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
       public String getRawProgressMessage() {
         return "Creating source manifest";
       }
+
+      @Override
+      public boolean isRemotable() {
+        // There is little gain to remoting these, since they include absolute path names inline.
+        return false;
+      }
     },
 
     /**
@@ -284,6 +295,12 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
       public String getRawProgressMessage() {
         return "Creating file sources list";
       }
+
+      @Override
+      public boolean isRemotable() {
+        // Source-only symlink manifest has root-relative paths and does not include absolute paths.
+        return true;
+      }
     }
   }
 
@@ -304,10 +321,18 @@ public final class SourceManifestAction extends AbstractFileWriteAction {
 
     public Builder(String prefix, ManifestType manifestType, ActionOwner owner, Artifact output,
                    boolean legacyExternalRunfiles) {
-      this.runfilesBuilder = new Runfiles.Builder(prefix, legacyExternalRunfiles);
-      manifestWriter = manifestType;
+      this(manifestType, owner, output, new Runfiles.Builder(prefix, legacyExternalRunfiles));
+    }
+
+    public Builder(
+        ManifestType manifestType,
+        ActionOwner owner,
+        Artifact output,
+        Runfiles.Builder runfilesBuilder) {
+      this.manifestWriter = manifestType;
       this.owner = owner;
       this.output = output;
+      this.runfilesBuilder = runfilesBuilder;
     }
 
     @VisibleForTesting  // Only used for testing.

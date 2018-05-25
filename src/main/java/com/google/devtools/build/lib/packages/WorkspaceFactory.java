@@ -33,7 +33,6 @@ import com.google.devtools.build.lib.packages.RuleFactory.InvalidRuleException;
 import com.google.devtools.build.lib.skylarkinterface.Param;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkSignature;
 import com.google.devtools.build.lib.syntax.BaseFunction;
-import com.google.devtools.build.lib.syntax.BazelLibrary;
 import com.google.devtools.build.lib.syntax.BuildFileAST;
 import com.google.devtools.build.lib.syntax.BuiltinFunction;
 import com.google.devtools.build.lib.syntax.ClassObject;
@@ -46,7 +45,6 @@ import com.google.devtools.build.lib.syntax.FuncallExpression;
 import com.google.devtools.build.lib.syntax.FunctionSignature;
 import com.google.devtools.build.lib.syntax.Mutability;
 import com.google.devtools.build.lib.syntax.ParserInputSource;
-import com.google.devtools.build.lib.syntax.Runtime;
 import com.google.devtools.build.lib.syntax.Runtime.NoneType;
 import com.google.devtools.build.lib.syntax.SkylarkList;
 import com.google.devtools.build.lib.syntax.SkylarkSemantics;
@@ -73,12 +71,14 @@ public class WorkspaceFactory {
           "__embedded_dir__", // serializable so optional
           "__workspace_dir__", // serializable so optional
           "DEFAULT_SERVER_JAVABASE", // serializable so optional
+          "DEFAULT_SYSTEM_JAVABASE", // serializable so optional
           PackageFactory.PKG_CONTEXT);
 
   private final Package.Builder builder;
 
   private final Path installDir;
   private final Path workspaceDir;
+  private final Path defaultSystemJavabaseDir;
   private final Mutability mutability;
 
   private final boolean allowOverride;
@@ -109,7 +109,7 @@ public class WorkspaceFactory {
       RuleClassProvider ruleClassProvider,
       ImmutableList<EnvironmentExtension> environmentExtensions,
       Mutability mutability) {
-    this(builder, ruleClassProvider, environmentExtensions, mutability, true, null, null);
+    this(builder, ruleClassProvider, environmentExtensions, mutability, true, null, null, null);
   }
 
   // TODO(bazel-team): document installDir
@@ -120,6 +120,7 @@ public class WorkspaceFactory {
    * @param mutability the Mutability for the current evaluation context
    * @param installDir the install directory
    * @param workspaceDir the workspace directory
+   * @param defaultSystemJavabaseDir the local JDK directory
    */
   public WorkspaceFactory(
       Package.Builder builder,
@@ -128,11 +129,13 @@ public class WorkspaceFactory {
       Mutability mutability,
       boolean allowOverride,
       @Nullable Path installDir,
-      @Nullable Path workspaceDir) {
+      @Nullable Path workspaceDir,
+      @Nullable Path defaultSystemJavabaseDir) {
     this.builder = builder;
     this.mutability = mutability;
     this.installDir = installDir;
     this.workspaceDir = workspaceDir;
+    this.defaultSystemJavabaseDir = defaultSystemJavabaseDir;
     this.allowOverride = allowOverride;
     this.environmentExtensions = environmentExtensions;
     this.ruleFactory = new RuleFactory(ruleClassProvider, AttributeContainer::new);
@@ -536,6 +539,11 @@ public class WorkspaceFactory {
         javaHome = javaHome.getParentFile();
       }
       workspaceEnv.update("DEFAULT_SERVER_JAVABASE", javaHome.toString());
+      workspaceEnv.update(
+          "DEFAULT_SYSTEM_JAVABASE",
+          defaultSystemJavabaseDir != null
+              ? defaultSystemJavabaseDir.toString()
+              : javaHome.toString());
 
       for (EnvironmentExtension extension : environmentExtensions) {
         extension.updateWorkspace(workspaceEnv);
@@ -551,16 +559,17 @@ public class WorkspaceFactory {
   private static ClassObject newNativeModule(
       ImmutableMap<String, BaseFunction> workspaceFunctions, String version) {
     ImmutableMap.Builder<String, Object> builder = new ImmutableMap.Builder<>();
-    Runtime.BuiltinRegistry builtins = Runtime.getBuiltinRegistry();
-    for (String nativeFunction : builtins.getFunctionNames(SkylarkNativeModule.class)) {
-      builder.put(nativeFunction, builtins.getFunction(SkylarkNativeModule.class, nativeFunction));
+    SkylarkNativeModule nativeModuleInstance = new SkylarkNativeModule();
+    for (String nativeFunction : FuncallExpression.getMethodNames(SkylarkNativeModule.class)) {
+      builder.put(nativeFunction,
+          FuncallExpression.getBuiltinCallable(nativeModuleInstance, nativeFunction));
     }
     for (Map.Entry<String, BaseFunction> function : workspaceFunctions.entrySet()) {
       builder.put(function.getKey(), function.getValue());
     }
 
     builder.put("bazel_version", version);
-    return NativeProvider.STRUCT.create(builder.build(), "no native function or rule '%s'");
+    return StructProvider.STRUCT.create(builder.build(), "no native function or rule '%s'");
   }
 
   static ClassObject newNativeModule(RuleClassProvider ruleClassProvider, String version) {

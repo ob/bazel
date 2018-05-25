@@ -74,10 +74,11 @@ struct RcStartupFlag {
       : source(source_arg), value(value_arg) {}
 };
 
-// This class holds the parsed startup options for Blaze.
-// These options and their defaults must be kept in sync with those in
+// This class defines the startup options accepted by all versions Bazel, and
+// holds the parsed values. These options and their defaults must be kept in
+// sync with those in
 // src/main/java/com/google/devtools/build/lib/runtime/BlazeServerStartupOptions.java.
-// The latter are purely decorative (they affect the help message,
+// The latter are (usually) purely decorative (they affect the help message,
 // which displays the defaults).  The actual defaults are defined
 // in the constructor.
 //
@@ -86,7 +87,6 @@ struct RcStartupFlag {
 // names also don't conform to the style guide.
 class StartupOptions {
  public:
-  explicit StartupOptions(const WorkspaceLayout* workspace_layout);
   virtual ~StartupOptions();
 
   // Parses a single argument, either from the command line or from the .blazerc
@@ -131,11 +131,16 @@ class StartupOptions {
   // StartupOptions, the "ExtraOptions" concept makes no sense; remove it.
   virtual blaze_exit_code::ExitCode ProcessArgExtra(
       const char *arg, const char *next_arg, const std::string &rcfile,
-      const char **value, bool *is_processed, std::string *error);
+      const char **value, bool *is_processed, std::string *error) = 0;
 
-  // Return the default path to the JDK used to run Blaze itself
-  // (must be an absolute directory).
-  virtual std::string GetDefaultHostJavabase() const;
+  // Once startup options have been parsed, warn the user if certain options
+  // might combine in surprising ways.
+  virtual void MaybeLogStartupOptionWarnings() const = 0;
+
+  // Returns the absolute path to the user's local JDK install, to be used as
+  // the default target javabase and as a fall-back host_javabase. This is not
+  // the embedded JDK.
+  virtual std::string GetSystemJavabase() const;
 
   // Returns the path to the JVM. This should be called after parsing
   // the startup options.
@@ -212,6 +217,9 @@ class StartupOptions {
   // output_base.
   std::string output_user_root;
 
+  // Override more finegrained rc file flags and ignore them all.
+  bool ignore_all_rc_files;
+
   // Whether to put the execroot at $OUTPUT_BASE/$WORKSPACE_NAME (if false) or
   // $OUTPUT_BASE/execroot/$WORKSPACE_NAME (if true).
   bool deep_execroot;
@@ -249,11 +257,6 @@ class StartupOptions {
 
   // If true, Blaze will listen to OS-level file change notifications.
   bool watchfs;
-
-  // Temporary experimental flag that permits configurable attribute syntax
-  // in BUILD files. This will be removed when configurable attributes is
-  // a more stable feature.
-  bool allow_configurable_attributes;
 
   // Temporary flag for enabling EventBus exceptions to be fatal.
   bool fatal_event_bus_exceptions;
@@ -296,8 +299,8 @@ class StartupOptions {
   // Constructor for subclasses only so that site-specific extensions of this
   // class can override the product name.  The product_name must be the
   // capitalized version of the name, as in "Bazel".
-  explicit StartupOptions(const std::string &product_name,
-                          const WorkspaceLayout* workspace_layout);
+  StartupOptions(const std::string &product_name,
+                 const WorkspaceLayout *workspace_layout);
 
   void RegisterUnaryStartupFlag(const std::string& flag_name);
 

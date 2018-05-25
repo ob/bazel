@@ -25,7 +25,9 @@ import com.google.devtools.build.lib.analysis.BlazeDirectories;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.ServerDirectories;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
+import com.google.devtools.build.lib.analysis.config.BuildOptions;
 import com.google.devtools.build.lib.analysis.config.FragmentOptions;
+import com.google.devtools.build.lib.bazel.rules.DefaultBuildOptionsForDiffing;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.testutil.Scratch;
 import com.google.devtools.build.lib.testutil.TestConstants;
@@ -155,10 +157,19 @@ public class BlazeCommandDispatcherRcoptionsTest {
                     builder.setToolsRepository(TestConstants.TOOLS_REPOSITORY);
                   }
                 })
+            .addBlazeModule(
+                new BlazeModule() {
+                  @Override
+                  public BuildOptions getDefaultBuildOptions(BlazeRuntime runtime) {
+                    return DefaultBuildOptionsForDiffing.getDefaultBuildOptionsForFragments(
+                        runtime.getRuleClassProvider().getConfigurationOptions());
+                  }
+                })
             .build();
 
     BlazeDirectories directories =
-        new BlazeDirectories(serverDirectories, scratch.dir("pkg"), productName);
+        new BlazeDirectories(
+            serverDirectories, scratch.dir("pkg"), /* defaultSystemJavabase= */ null, productName);
     this.runtime.initWorkspace(directories, /*binTools=*/null);
   }
 
