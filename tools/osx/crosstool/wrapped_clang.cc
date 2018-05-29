@@ -216,7 +216,7 @@ int main(int argc, char *argv[]) {
     }
     FindAndReplace("__BAZEL_XCODE_DEVELOPER_DIR__", developer_dir, &arg);
     FindAndReplace("__BAZEL_XCODE_SDKROOT__", sdk_root, &arg);
-    SplitAndAdd(arg, processed_args);
+    processed_args.push_back(arg);
   }
 
   // Check to see if we should postprocess with dsymutil.
