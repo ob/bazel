@@ -38,6 +38,7 @@ import com.google.devtools.build.lib.analysis.LocationExpander;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.Runfiles;
 import com.google.devtools.build.lib.analysis.RunfilesProvider;
+import com.google.devtools.build.lib.analysis.ShToolchain;
 import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.FragmentCollection;
@@ -595,6 +596,12 @@ public final class SkylarkRuleContext implements SkylarkRuleContextApi {
   }
 
   @Override
+  public ImmutableList<String> getDisabledFeatures() throws EvalException {
+    checkMutable("disabled_features");
+    return ImmutableList.copyOf(ruleContext.getDisabledFeatures());
+  }
+
+  @Override
   public ArtifactRoot getBinDirectory() throws EvalException {
     checkMutable("bin_dir");
     return getConfiguration().getBinDirectory(ruleContext.getRule().getRepository());
@@ -996,8 +1003,10 @@ public final class SkylarkRuleContext implements SkylarkRuleContextApi {
                 String.class,
                 String.class,
                 "execution_requirements"));
+    PathFragment shExecutable = ShToolchain.getPathOrError(ruleContext);
     List<String> argv =
-        helper.buildCommandLine(command, inputs, SCRIPT_SUFFIX, executionRequirements);
+        helper.buildCommandLine(
+            shExecutable, command, inputs, SCRIPT_SUFFIX, executionRequirements);
     return Tuple.<Object>of(
         MutableList.copyOf(env, inputs),
         MutableList.copyOf(env, argv),

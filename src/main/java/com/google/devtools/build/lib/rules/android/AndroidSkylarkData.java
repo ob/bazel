@@ -34,6 +34,7 @@ import com.google.devtools.build.lib.rules.android.AndroidLibraryAarInfo.Aar;
 import com.google.devtools.build.lib.rules.java.JavaCompilationInfoProvider;
 import com.google.devtools.build.lib.rules.java.JavaInfo;
 import com.google.devtools.build.lib.rules.java.ProguardSpecProvider;
+import com.google.devtools.build.lib.skylarkbuildapi.android.AndroidBinaryDataSettingsApi;
 import com.google.devtools.build.lib.skylarkinterface.Param;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkCallable;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
@@ -981,10 +982,7 @@ public abstract class AndroidSkylarkData {
         env);
   }
 
-  @SkylarkModule(
-      name = "AndroidBinaryDataSettings",
-      doc = "Wraps common settings for working with android_binary assets, resources, and manifest")
-  private static class BinaryDataSettings {
+  private static class BinaryDataSettings implements AndroidBinaryDataSettingsApi {
     private final AndroidAaptVersion aaptVersion;
     private final boolean shrinkResources;
     private final ResourceFilterFactory resourceFilterFactory;
@@ -1197,7 +1195,7 @@ public abstract class AndroidSkylarkData {
           resourceApk.getArtifact(),
           resourceApk.getResourceProguardConfig(),
           resourceApk.toResourceInfo(ctx.getLabel()),
-          resourceApk.toAssetsInfo(ctx.getLabel()).get(),
+          resourceApk.toAssetsInfo(ctx.getLabel()),
           resourceApk.toManifestInfo().get());
 
     } catch (RuleErrorException e) {
@@ -1315,11 +1313,10 @@ public abstract class AndroidSkylarkData {
       ResourceApk resourceApk, Label label) {
     ImmutableMap.Builder<Provider, NativeInfo> builder = ImmutableMap.builder();
 
-    builder.put(AndroidResourcesInfo.PROVIDER, resourceApk.toResourceInfo(label));
+    builder
+        .put(AndroidResourcesInfo.PROVIDER, resourceApk.toResourceInfo(label))
+        .put(AndroidAssetsInfo.PROVIDER, resourceApk.toAssetsInfo(label));
 
-    resourceApk
-        .toAssetsInfo(label)
-        .ifPresent(info -> builder.put(AndroidAssetsInfo.PROVIDER, info));
     resourceApk.toManifestInfo().ifPresent(info -> builder.put(AndroidManifestInfo.PROVIDER, info));
 
     builder.put(JavaInfo.PROVIDER, getJavaInfoForRClassJar(resourceApk.getResourceJavaClassJar()));
