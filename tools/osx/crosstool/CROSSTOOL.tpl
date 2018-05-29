@@ -903,7 +903,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -1060,7 +1061,8 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
+        flag: "-framework"
+        flag: "Foundation"
       }
     }
   }
@@ -1070,7 +1072,8 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Cocoa"
+        flag: "-framework"
+        flag: "Cocoa"
       }
     }
   }
@@ -1478,11 +1481,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -1490,7 +1495,8 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
         flag: "-o %{linked_binary}"
@@ -1545,11 +1551,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -1557,10 +1565,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -2551,7 +2561,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -2709,8 +2720,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -3133,11 +3146,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -3145,10 +3160,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -3200,11 +3217,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -3212,10 +3231,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -4206,7 +4227,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
         flag: "-F%{sdk_framework_dir}"
         flag: "-F%{platform_developer_framework_dir}"
       }
@@ -4366,8 +4388,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -4790,11 +4814,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -4802,10 +4828,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -4857,11 +4885,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -4869,10 +4899,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -5864,7 +5896,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -6031,8 +6064,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -6474,11 +6509,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -6486,10 +6523,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -6541,11 +6580,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -6553,10 +6594,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -7550,7 +7593,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -7708,8 +7752,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -8132,11 +8178,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -8144,10 +8192,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -8199,11 +8249,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -8211,10 +8263,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -9205,7 +9259,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -9363,8 +9418,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -9775,11 +9832,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -9787,10 +9846,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -9842,11 +9903,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -9854,10 +9917,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -10848,7 +10913,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
         flag: "-F%{sdk_framework_dir}"
         flag: "-F%{platform_developer_framework_dir}"
       }
@@ -11008,8 +11074,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -11420,11 +11488,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -11432,10 +11502,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -11487,11 +11559,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -11499,10 +11573,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -12494,7 +12570,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -12661,8 +12738,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -13092,11 +13171,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -13104,10 +13185,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -13159,11 +13242,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -13171,10 +13256,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -14168,7 +14255,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -14326,8 +14414,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -14738,11 +14828,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -14750,10 +14842,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -14805,11 +14899,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -14817,10 +14913,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -15812,7 +15910,8 @@ toolchain {
       action: "assemble"
       action: "preprocess-assemble"
       flag_group {
-        flag: "-isysroot %{sdk_dir}"
+        flag: "-isysroot"
+        flag: "%{sdk_dir}"
       }
     }
   }
@@ -15970,8 +16069,10 @@ toolchain {
       action: "objc-executable"
       action: "objc++-executable"
       flag_group {
-        flag: "-framework Foundation"
-        flag: "-framework UIKit"
+        flag: "-framework"
+        flag: "Foundation"
+        flag: "-framework"
+        flag: "UIKit"
       }
     }
   }
@@ -16382,11 +16483,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -16394,10 +16497,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"
@@ -16449,11 +16554,13 @@ toolchain {
         flag: "-ObjC"
       }
       flag_group {
-        flag: "-framework %{framework_names}"
+        flag: "-framework"
+        flag: "%{framework_names}"
         iterate_over: "framework_names"
       }
       flag_group {
-        flag: "-weak_framework %{weak_framework_names}"
+        flag: "-weak_framework"
+        flag: "%{weak_framework_names}"
         iterate_over: "weak_framework_names"
       }
       flag_group {
@@ -16461,10 +16568,12 @@ toolchain {
         iterate_over: "library_names"
       }
       flag_group {
-        flag: "-filelist %{filelist}"
+        flag: "-filelist"
+        flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
         flag: "-force_load %{force_load_exec_paths}"

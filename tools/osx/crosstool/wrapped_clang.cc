@@ -216,6 +216,7 @@ int main(int argc, char *argv[]) {
     }
     FindAndReplace("__BAZEL_XCODE_DEVELOPER_DIR__", developer_dir, &arg);
     FindAndReplace("__BAZEL_XCODE_SDKROOT__", sdk_root, &arg);
+    std::cerr << "OB OUTPUT: " + arg << "\n";
     processed_args.push_back(arg);
   }
 
