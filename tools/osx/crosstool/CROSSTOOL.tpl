@@ -1499,10 +1499,12 @@ toolchain {
         flag: "%{filelist}"
       }
       flag_group {
-        flag: "-o %{linked_binary}"
+        flag: "-o"
+        flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -1573,7 +1575,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -3168,7 +3171,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -3239,7 +3243,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -4836,7 +4841,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -4907,7 +4913,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -6531,7 +6538,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -6602,7 +6610,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -8200,7 +8209,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -8271,7 +8281,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -9854,7 +9865,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -9925,7 +9937,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -11510,7 +11523,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -11581,7 +11595,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -13193,7 +13208,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -13264,7 +13280,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -14850,7 +14867,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -14921,7 +14939,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -16505,7 +16524,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
@@ -16576,7 +16596,8 @@ toolchain {
         flag: "%{linked_binary}"
       }
       flag_group {
-        flag: "-force_load %{force_load_exec_paths}"
+        flag: "-force_load"
+        flag: "%{force_load_exec_paths}"
         iterate_over: "force_load_exec_paths"
       }
       flag_group {
