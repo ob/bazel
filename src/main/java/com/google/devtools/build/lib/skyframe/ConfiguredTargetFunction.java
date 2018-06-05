@@ -31,6 +31,7 @@ import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.ConfiguredTargetFactory;
 import com.google.devtools.build.lib.analysis.Dependency;
 import com.google.devtools.build.lib.analysis.DependencyResolver.InconsistentAspectOrderException;
+import com.google.devtools.build.lib.analysis.PlatformSemantics;
 import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
 import com.google.devtools.build.lib.analysis.ToolchainContext;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
@@ -57,9 +58,11 @@ import com.google.devtools.build.lib.packages.Attribute;
 import com.google.devtools.build.lib.packages.BuildType;
 import com.google.devtools.build.lib.packages.NoSuchTargetException;
 import com.google.devtools.build.lib.packages.NoSuchThingException;
+import com.google.devtools.build.lib.packages.NonconfigurableAttributeMapper;
 import com.google.devtools.build.lib.packages.Package;
 import com.google.devtools.build.lib.packages.RawAttributeMapper;
 import com.google.devtools.build.lib.packages.Rule;
+import com.google.devtools.build.lib.packages.RuleClass.ExecutionPlatformConstraintsAllowed;
 import com.google.devtools.build.lib.packages.RuleClassProvider;
 import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.packages.Target;
@@ -272,11 +275,15 @@ public final class ConfiguredTargetFunction implements SkyFunction {
         if (rule.getRuleClassObject().supportsPlatforms()) {
           ImmutableSet<Label> requiredToolchains =
               rule.getRuleClassObject().getRequiredToolchains();
+
+          // Collect local (target, rule) constraints for filtering out execution platforms.
+          ImmutableSet<Label> execConstraintLabels = getExecutionPlatformConstraints(rule);
           toolchainContext =
               ToolchainUtil.createToolchainContext(
                   env,
                   rule.toString(),
                   requiredToolchains,
+                  execConstraintLabels,
                   configuredTargetKey.getConfigurationKey());
           if (env.valuesMissing()) {
             return null;
@@ -381,6 +388,25 @@ public final class ConfiguredTargetFunction implements SkyFunction {
     } finally {
       cpuBoundSemaphore.release();
     }
+  }
+
+  /**
+   * Returns the target-specific execution platform constraints, based on the rule definition and
+   * any constraints added by the target.
+   */
+  private static ImmutableSet<Label> getExecutionPlatformConstraints(Rule rule) {
+    NonconfigurableAttributeMapper mapper = NonconfigurableAttributeMapper.of(rule);
+    ImmutableSet.Builder<Label> execConstraintLabels = new ImmutableSet.Builder<>();
+
+    execConstraintLabels.addAll(rule.getRuleClassObject().getExecutionPlatformConstraints());
+
+    if (rule.getRuleClassObject().executionPlatformConstraintsAllowed()
+        == ExecutionPlatformConstraintsAllowed.PER_TARGET) {
+      execConstraintLabels.addAll(
+          mapper.get(PlatformSemantics.EXEC_COMPATIBLE_WITH_ATTR, BuildType.LABEL_LIST));
+    }
+
+    return execConstraintLabels.build();
   }
 
   /**
@@ -537,35 +563,36 @@ public final class ConfiguredTargetFunction implements SkyFunction {
       return NO_CONFIG_CONDITIONS;
     }
 
-    // Collect the corresponding Skyframe configured target values. Abort early if they haven't
-    // been computed yet.
-    Collection<Dependency> configValueNames;
+    // Collect the actual deps, hard-coded to the current configuration (since by definition config
+    // conditions evaluate over the current target's configuration).
+    ImmutableList.Builder<Dependency> depsBuilder = ImmutableList.builder();
     try {
-      configValueNames = resolver.resolveRuleLabels(
-          ctgValue, configLabelMap, transitiveRootCauses, trimmingTransitionFactory);
+      for (Dependency dep : resolver.resolveRuleLabels(
+          ctgValue, configLabelMap, transitiveRootCauses, trimmingTransitionFactory)) {
+        if (dep.hasExplicitConfiguration() && dep.getConfiguration() == null) {
+          // Bazel assumes non-existent labels are source files, which have a null configuration.
+          // Keep those as is. Otherwise ConfiguredTargetAndData throws an exception about a
+          // source file having a non-null configuration. The error checking later in this method
+          // reports a proper "bad config condition" error to the user.
+          depsBuilder.add(dep);
+        } else {
+          depsBuilder.add(Dependency.withConfigurationAndAspects(dep.getLabel(),
+              ctgValue.getConfiguration(), dep.getAspects()));
+        }
+      }
     } catch (InconsistentAspectOrderException e) {
       throw new DependencyEvaluationException(e);
     }
     if (env.valuesMissing()) {
       return null;
     }
-
-    // No need to get new configs from Skyframe - config_setting rules always use the current
-    // target's config.
-    // TODO(bazel-team): remove the need for this special transformation. We can probably do this by
-    // simply passing this through trimConfigurations.
-    ImmutableList.Builder<Dependency> staticConfigs = ImmutableList.builder();
-    for (Dependency dep : configValueNames) {
-      staticConfigs.add(Dependency.withConfigurationAndAspects(dep.getLabel(),
-          ctgValue.getConfiguration(), dep.getAspects()));
-    }
-    configValueNames = staticConfigs.build();
+    ImmutableList<Dependency> configConditionDeps = depsBuilder.build();
 
     Map<SkyKey, ConfiguredTargetAndData> configValues =
         resolveConfiguredTargetDependencies(
             env,
             ctgValue,
-            configValueNames,
+            configConditionDeps,
             transitivePackagesForPackageRootResolution,
             transitiveRootCauses);
     if (configValues == null) {
@@ -573,7 +600,7 @@ public final class ConfiguredTargetFunction implements SkyFunction {
     }
 
     // Get the configured targets as ConfigMatchingProvider interfaces.
-    for (Dependency entry : configValueNames) {
+    for (Dependency entry : configConditionDeps) {
       SkyKey baseKey = ConfiguredTargetValue.key(entry.getLabel(), entry.getConfiguration());
       ConfiguredTarget value = configValues.get(baseKey).getConfiguredTarget();
       // The code above guarantees that value is non-null here.

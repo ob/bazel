@@ -118,48 +118,6 @@ void RunSubProcess(const std::vector<std::string> &args) {
   }
 }
 
-// Splits txt on the whitespace delimiters, trying to guess what's a flag
-// and what's an argument.
-// This is because the wrapped_clang binary is called with arguments like:
-//     wrapped_clang '-isysroot a/path/that might have/spaces' and we need to
-// preserve the path but split the flag and value.
-//
-// Unfortunately, sometimes we get stuff like:
-//     wrapped_clang '-Xlinker -add_ast_path -Xlinker a/path'
-// and it's all quoted. So this function splits out flags and keeps arguments
-// intact. Of course it'll fail in something like
-//     wrapped_clang '-isysroot a/path - separated - by dashes/'
-// but who does that?
-void SplitAndAdd(const std::string &txt, std::vector<std::string> &strs) {
-  if (txt[0] != '-') {
-    // not a flag, so no need to split anything.
-    strs.push_back(txt);
-    return;
-  }
-  std::istringstream stream(txt);
-  std::string argument;
-  while (!stream.eof()) {
-    std::string substring;
-    stream >> substring;
-    if (!substring.empty()) {
-      if (substring[0] == '-') {
-        // a flag, just push it
-        if (!argument.empty()) {
-          strs.push_back(argument);
-          argument.clear();
-        }
-        strs.push_back(substring);
-      } else {
-        // part of previous so combine
-        argument += (argument.empty() ? "" : " ") + substring;
-      }
-    }
-  }
-  if (!argument.empty()) {
-    strs.push_back(argument);
-  }
-}
-
 // Finds and replaces all instances of oldsub with newsub, in-place on str.
 void FindAndReplace(const std::string &oldsub, const std::string &newsub,
                     std::string *str) {
@@ -238,7 +196,7 @@ int main(int argc, char *argv[]) {
     }
     FindAndReplace("__BAZEL_XCODE_DEVELOPER_DIR__", developer_dir, &arg);
     FindAndReplace("__BAZEL_XCODE_SDKROOT__", sdk_root, &arg);
-    SplitAndAdd(arg, processed_args);
+    processed_args.push_back(arg);
   }
 
   // Check to see if we should postprocess with dsymutil.

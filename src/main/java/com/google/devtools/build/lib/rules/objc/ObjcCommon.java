@@ -336,16 +336,6 @@ public final class ObjcCommon {
       return this;
     }
 
-    /**
-     * Add providers which will only be used by the declaring rule, and won't be propagated to any
-     * dependers on the declaring rule.
-     */
-    Builder addNonPropagatedDepObjcProviders(Iterable<ObjcProvider> directDepObjcProviders) {
-      this.directDepObjcProviders =
-          Iterables.concat(this.directDepObjcProviders, directDepObjcProviders);
-      return this;
-    }
-
     /** Adds includes to be passed into compile actions with {@code -I}. */
     public Builder addIncludes(Iterable<PathFragment> includes) {
       this.includes = Iterables.concat(this.includes, includes);
@@ -483,8 +473,7 @@ public final class ObjcCommon {
               .add(IQUOTE, buildConfiguration.getGenfilesFragment())
               .addAllForDirectDependents(INCLUDE, directDependencyIncludes)
               .addAll(DEFINE, defines)
-              .addTransitiveAndPropagate(depObjcProviders)
-              .addTransitiveWithoutPropagating(directDepObjcProviders);
+              .addTransitiveAndPropagate(depObjcProviders);
 
       for (ObjcProvider provider : runtimeDepObjcProviders) {
         objcProvider.addTransitiveAndPropagate(ObjcProvider.DYNAMIC_FRAMEWORK_FILE, provider);
