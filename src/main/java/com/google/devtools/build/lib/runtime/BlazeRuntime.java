@@ -86,7 +86,6 @@ import com.google.devtools.common.options.OptionsParser;
 import com.google.devtools.common.options.OptionsParsingException;
 import com.google.devtools.common.options.OptionsProvider;
 import com.google.devtools.common.options.TriState;
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -263,18 +262,29 @@ public final class BlazeRuntime {
   /**
    * Conditionally enable profiling.
    */
-  private final boolean initProfiler(CommandEnvironment env, CommonCommandOptions options,
-      UUID buildID, long execStartTimeNanos) {
+  private final boolean initProfiler(
+      CommandEnvironment env,
+      CommonCommandOptions options,
+      UUID buildID,
+      long execStartTimeNanos) {
     OutputStream out = null;
     boolean recordFullProfilerData = false;
     ProfiledTaskKinds profiledTasks = ProfiledTaskKinds.NONE;
 
     try {
-      if (options.profilePath != null) {
+      if (options.enableTracer) {
+        Path profilePath = options.profilePath != null
+            ? env.getWorkspace().getRelative(options.profilePath)
+            : env.getOutputBase().getRelative("command.profile");
+        recordFullProfilerData = false;
+        out = profilePath.getOutputStream();
+        env.getReporter().handle(Event.info("Writing tracer profile to '" + profilePath + "'"));
+        profiledTasks = ProfiledTaskKinds.ALL_FOR_TRACE;
+      } else if (options.profilePath != null) {
         Path profilePath = env.getWorkspace().getRelative(options.profilePath);
 
         recordFullProfilerData = options.recordFullProfilerData;
-        out = new BufferedOutputStream(profilePath.getOutputStream(), 1024 * 1024);
+        out = profilePath.getOutputStream();
         env.getReporter().handle(Event.info("Writing profile data to '" + profilePath + "'"));
         profiledTasks = ProfiledTaskKinds.ALL;
       } else if (options.alwaysProfileSlowOperations) {
@@ -283,10 +293,19 @@ public final class BlazeRuntime {
         profiledTasks = ProfiledTaskKinds.SLOWEST;
       }
       if (profiledTasks != ProfiledTaskKinds.NONE) {
-        Profiler.instance().start(profiledTasks, out,
-            getProductName() + " profile for " + env.getOutputBase() + " at " + new Date()
-            + ", build ID: " + buildID,
-            recordFullProfilerData, clock, execStartTimeNanos);
+        Profiler.instance().start(
+            profiledTasks,
+            out,
+            Profiler.Format.BINARY_BAZEL_FORMAT,
+            String.format(
+                "%s profile for %s at %s, build ID: %s",
+                getProductName(),
+                env.getOutputBase(),
+                new Date(),
+                buildID),
+            recordFullProfilerData,
+            clock,
+            execStartTimeNanos);
         return true;
       }
     } catch (IOException e) {

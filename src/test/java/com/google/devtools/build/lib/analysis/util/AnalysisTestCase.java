@@ -50,7 +50,6 @@ import com.google.devtools.build.lib.packages.SkylarkSemanticsOptions;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.packages.util.MockToolsConfig;
 import com.google.devtools.build.lib.pkgcache.LoadingOptions;
-import com.google.devtools.build.lib.pkgcache.LoadingPhaseRunner;
 import com.google.devtools.build.lib.pkgcache.LoadingResult;
 import com.google.devtools.build.lib.pkgcache.PackageCacheOptions;
 import com.google.devtools.build.lib.pkgcache.PackageManager;
@@ -100,7 +99,6 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
   /** All the flags that can be passed to {@link BuildView#update}. */
   public enum Flag {
     KEEP_GOING,
-    SKYFRAME_LOADING_PHASE,
     // Configurations that only include the fragments a target needs to properly analyze.
     TRIMMED_CONFIGURATIONS
   }
@@ -131,7 +129,6 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
   protected BuildOptions buildOptions;
   private OptionsParser optionsParser;
   protected PackageManager packageManager;
-  private LoadingPhaseRunner loadingPhaseRunner;
   private BuildView buildView;
   protected final ActionKeyContext actionKeyContext = new ActionKeyContext();
 
@@ -221,8 +218,6 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
         RepositoryDelegatorFunction.REPOSITORY_OVERRIDES,
         ImmutableMap.<RepositoryName, PathFragment>of())));
     packageManager = skyframeExecutor.getPackageManager();
-    loadingPhaseRunner = skyframeExecutor.getLoadingPhaseRunner(
-        pkgFactory.getRuleClassNames(), defaultFlags().contains(Flag.SKYFRAME_LOADING_PHASE));
     buildView = new BuildView(directories, ruleClassProvider, skyframeExecutor, null);
 
   }
@@ -250,7 +245,8 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
                     BuildRequestOptions.class,
                     BuildView.Options.class,
                     KeepGoingOption.class,
-                    LoadingPhaseThreadsOption.class),
+                    LoadingPhaseThreadsOption.class,
+                    LoadingOptions.class),
                 ruleClassProvider.getConfigurationOptions()));
     optionsParser.parse(new String[] {"--default_visibility=public" });
     optionsParser.parse(args);
@@ -310,7 +306,7 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
           throws Exception {
     Set<Flag> flags = config.flags;
 
-    LoadingOptions loadingOptions = Options.getDefaults(LoadingOptions.class);
+    LoadingOptions loadingOptions = optionsParser.getOptions(LoadingOptions.class);
 
     BuildView.Options viewOptions = optionsParser.getOptions(BuildView.Options.class);
     // update --keep_going option if test requested it.
@@ -345,7 +341,7 @@ public abstract class AnalysisTestCase extends FoundationTestCase {
         reporter, ModifiedFileSet.EVERYTHING_MODIFIED, Root.fromPath(rootDirectory));
 
     LoadingResult loadingResult =
-        loadingPhaseRunner.execute(
+        skyframeExecutor.loadTargetPatterns(
             reporter,
             ImmutableList.copyOf(labels),
             PathFragment.EMPTY_FRAGMENT,

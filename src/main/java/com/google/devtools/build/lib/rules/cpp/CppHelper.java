@@ -200,7 +200,8 @@ public class CppHelper {
     List<String> result = new ArrayList<>();
     Expander expander = ruleContext.getExpander().withDataExecLocations();
     for (String value : values) {
-      if (isLinkoptLabel(value)) {
+      if (ruleContext.getFragment(CppConfiguration.class).getExpandLinkoptsLabels()
+          && isLinkoptLabel(value)) {
         if (!expandLabel(ruleContext, result, value)) {
           ruleContext.attributeError(attrName, "could not resolve label '" + value + "'");
         }
@@ -860,6 +861,9 @@ public class CppHelper {
     if (cppConfiguration.isFdo()) {
       return (cppConfiguration.getLipoMode() == LipoMode.BINARY) ? "LIPO" : "FDO";
     }
+    if (fdoSupport.isXBinaryFdoEnabled()) {
+      return "XFDO";
+    }
     return null;
   }
 
@@ -899,14 +903,13 @@ public class CppHelper {
       return;
     }
 
-    if (!featureConfiguration.actionIsConfigured(CppCompileAction.STRIP_ACTION_NAME)) {
+    if (!featureConfiguration.actionIsConfigured(CppActionNames.STRIP)) {
       context.ruleError("Expected action_config for 'strip' to be configured.");
       return;
     }
 
     Tool stripTool =
-        Preconditions.checkNotNull(
-            featureConfiguration.getToolForAction(CppCompileAction.STRIP_ACTION_NAME));
+        Preconditions.checkNotNull(featureConfiguration.getToolForAction(CppActionNames.STRIP));
     CcToolchainVariables variables =
         new CcToolchainVariables.Builder(toolchain.getBuildVariables())
             .addStringVariable(
@@ -916,8 +919,7 @@ public class CppHelper {
             .addStringVariable(CcCommon.INPUT_FILE_VARIABLE_NAME, input.getExecPathString())
             .build();
     ImmutableList<String> commandLine =
-        ImmutableList.copyOf(
-            featureConfiguration.getCommandLine(CppCompileAction.STRIP_ACTION_NAME, variables));
+        ImmutableList.copyOf(featureConfiguration.getCommandLine(CppActionNames.STRIP, variables));
     ImmutableMap.Builder<String, String> executionInfoBuilder = ImmutableMap.builder();
     for (String executionRequirement : stripTool.getExecutionRequirements()) {
       executionInfoBuilder.put(executionRequirement, "");

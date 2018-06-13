@@ -14,8 +14,7 @@
 
 package com.google.devtools.build.lib.runtime;
 
-import static com.google.devtools.build.lib.profiler.AutoProfiler.profiled;
-
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.actions.PackageRootResolver;
@@ -33,9 +32,10 @@ import com.google.devtools.build.lib.packages.SkylarkSemanticsOptions;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.pkgcache.PackageCacheOptions;
 import com.google.devtools.build.lib.pkgcache.PackageManager;
-import com.google.devtools.build.lib.pkgcache.TargetPatternEvaluator;
-import com.google.devtools.build.lib.profiler.AutoProfiler;
+import com.google.devtools.build.lib.pkgcache.TargetPatternPreloader;
+import com.google.devtools.build.lib.profiler.Profiler;
 import com.google.devtools.build.lib.profiler.ProfilerTask;
+import com.google.devtools.build.lib.profiler.SilentCloseable;
 import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
 import com.google.devtools.build.lib.skyframe.OutputService;
 import com.google.devtools.build.lib.skyframe.SkyframeBuildView;
@@ -147,7 +147,7 @@ public final class CommandEnvironment {
 
     // TODO(ulfjack): We don't call beforeCommand() in tests, but rely on workingDirectory being set
     // in setupPackageCache(). This leads to NPE if we don't set it here.
-    this.workingDirectory = directories.getWorkspace();
+    this.setWorkingDirectory(directories.getWorkspace());
     this.workspaceName = null;
 
     workspace.getSkyframeExecutor().setEventBus(eventBus);
@@ -317,12 +317,10 @@ public final class CommandEnvironment {
   }
 
   /**
-   * Creates and returns a new target pattern parser.
+   * Creates and returns a new target pattern preloader.
    */
-  public TargetPatternEvaluator newTargetPatternEvaluator() {
-    TargetPatternEvaluator result = getPackageManager().newTargetPatternEvaluator();
-    result.updateOffset(relativeWorkingDirectory);
-    return result;
+  public TargetPatternPreloader newTargetPatternPreloader() {
+    return getPackageManager().newTargetPatternPreloader();
   }
 
   public PackageRootResolver getPackageRootResolver() {
@@ -557,8 +555,16 @@ public final class CommandEnvironment {
     return commandStartTime;
   }
 
-  void setWorkingDirectory(Path workingDirectory) {
+  @VisibleForTesting
+  public void setWorkingDirectoryForTesting(Path workingDirectory) {
+    setWorkingDirectory(workingDirectory);
+  }
+
+  private void setWorkingDirectory(Path workingDirectory) {
     this.workingDirectory = workingDirectory;
+    if (getWorkspace() != null) {
+      this.relativeWorkingDirectory = workingDirectory.relativeTo(getWorkspace());
+    }
   }
 
   /**
@@ -611,8 +617,7 @@ public final class CommandEnvironment {
       workspace = FileSystemUtils.getWorkingDirectory(getRuntime().getFileSystem());
       workingDirectory = workspace;
     }
-    this.relativeWorkingDirectory = workingDirectory.relativeTo(workspace);
-    this.workingDirectory = workingDirectory;
+    this.setWorkingDirectory(workingDirectory);
 
     // Fail fast in the case where a Blaze command forgets to install the package path correctly.
     skyframeExecutor.setActive(false);
@@ -640,7 +645,8 @@ public final class CommandEnvironment {
     // and so we need to compute it freshly. Otherwise, we can used the immutable value that's
     // precomputed by our BlazeWorkspace.
     if (getOutputService() != null) {
-      try (AutoProfiler p = profiled("Finding output file system", ProfilerTask.INFO)) {
+      try (SilentCloseable c =
+          Profiler.instance().profile(ProfilerTask.INFO, "Finding output file system")) {
         return getOutputService().getFilesSystemName();
       }
     }

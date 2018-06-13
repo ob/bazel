@@ -53,6 +53,7 @@ import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
 import com.google.devtools.build.lib.events.Event;
 import com.google.devtools.build.lib.profiler.Profiler;
 import com.google.devtools.build.lib.profiler.ProfilerTask;
+import com.google.devtools.build.lib.profiler.SilentCloseable;
 import com.google.devtools.build.lib.rules.cpp.CcCommon.CoptsFilter;
 import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
 import com.google.devtools.build.lib.rules.cpp.CppCompileActionContext.Reply;
@@ -92,69 +93,6 @@ public class CppCompileAction extends AbstractAction
 
   private static final int VALIDATION_DEBUG = 0;  // 0==none, 1==warns/errors, 2==all
   private static final boolean VALIDATION_DEBUG_WARN = VALIDATION_DEBUG >= 1;
-
-  /** A string constant used to compute CC_FLAGS make variable value */
-  public static final java.lang.String CC_FLAGS_MAKE_VARIABLE_ACTION_NAME =
-      "cc-flags-make-variable";
-
-  /** A string constant for the strip action name. */
-  public static final String STRIP_ACTION_NAME = "strip";
-
-  /** A string constant for the linkstamp-compile action. */
-  public static final String LINKSTAMP_COMPILE = "linkstamp-compile";
-
-  /**
-   * A string constant for the c compilation action.
-   */
-  public static final String C_COMPILE = "c-compile";
-
-  /**
-   * A string constant for the c++ compilation action.
-   */
-  public static final String CPP_COMPILE = "c++-compile";
-
-  /** A string constant for the c++ module compile action. */
-  public static final String CPP_MODULE_CODEGEN = "c++-module-codegen";
-
-  /**
-   * A string constant for the objc compilation action.
-   */
-  public static final String OBJC_COMPILE = "objc-compile";
-
-  /**
-   * A string constant for the objc++ compile action.
-   */
-  public static final String OBJCPP_COMPILE = "objc++-compile";
-
-  /**
-   * A string constant for the c++ header parsing.
-   */
-  public static final String CPP_HEADER_PARSING = "c++-header-parsing";
-
-  /**
-   * A string constant for the c++ header preprocessing.
-   */
-  public static final String CPP_HEADER_PREPROCESSING = "c++-header-preprocessing";
-
-  /**
-   * A string constant for the c++ module compilation action.
-   * Note: currently we don't support C module compilation.
-   */
-  public static final String CPP_MODULE_COMPILE = "c++-module-compile";
-
-  /**
-   * A string constant for the assembler actions.
-   */
-  public static final String ASSEMBLE = "assemble";
-  public static final String PREPROCESS_ASSEMBLE = "preprocess-assemble";
-
-  /**
-   * A string constant for the clif actions. Bazel enables different features of the toolchain based
-   * on the name of the action. This name enables the clif_matcher feature, which switches the
-   * "compiler" to the clif_matcher and adds some additional arguments as described in the CROSSTOOL
-   * file.
-   */
-  public static final String CLIF_MATCH = "clif-match";
 
   protected final Artifact outputFile;
   private final Artifact sourceFile;
@@ -986,14 +924,11 @@ public class CppCompileAction extends AbstractAction
   @ThreadCompatible
   public final void updateActionInputs(NestedSet<Artifact> discoveredInputs) {
     NestedSetBuilder<Artifact> inputs = NestedSetBuilder.stableOrder();
-    Profiler.instance().startTask(ProfilerTask.ACTION_UPDATE, describe());
-    try {
+    try (SilentCloseable c = Profiler.instance().profile(ProfilerTask.ACTION_UPDATE, describe())) {
       inputs.addTransitive(mandatoryInputs);
       inputs.addAll(inputsForInvalidation);
       inputs.addTransitive(discoveredInputs);
       updateInputs(inputs.build());
-    } finally {
-      Profiler.instance().completeTask(ProfilerTask.ACTION_UPDATE);
     }
   }
 
@@ -1327,11 +1262,11 @@ public class CppCompileAction extends AbstractAction
   @Override
   public String getMnemonic() {
     switch (actionName) {
-      case OBJC_COMPILE:
-      case OBJCPP_COMPILE:
+      case CppActionNames.OBJC_COMPILE:
+      case CppActionNames.OBJCPP_COMPILE:
         return "ObjcCompile";
 
-      case LINKSTAMP_COMPILE:
+      case CppActionNames.LINKSTAMP_COMPILE:
         // When compiling shared native deps, e.g. when two java_binary rules have the same set of
         // native dependencies, the CppCompileAction for link stamp data is shared also. This means
         // that out of two CppCompileAction instances, only one is actually executed, which means

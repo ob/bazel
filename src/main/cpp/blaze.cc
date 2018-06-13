@@ -64,6 +64,8 @@
 #include "src/main/cpp/util/file.h"
 #include "src/main/cpp/util/logging.h"
 #include "src/main/cpp/util/numbers.h"
+#include "src/main/cpp/util/path.h"
+#include "src/main/cpp/util/path_platform.h"
 #include "src/main/cpp/util/port.h"
 #include "src/main/cpp/util/strings.h"
 #include "src/main/cpp/workspace_layout.h"
@@ -412,7 +414,15 @@ static vector<string> GetArgumentArray(
 
   result.push_back("-XX:+HeapDumpOnOutOfMemoryError");
   string heap_crash_path = globals->options->output_base;
-  result.push_back("-XX:HeapDumpPath=" + blaze::PathAsJvmFlag(heap_crash_path));
+  result.push_back("-XX:HeapDumpPath=" +
+                   blaze_util::PathAsJvmFlag(heap_crash_path));
+
+  // TODO(b/109998449): only assume JDK >= 9 for embedded JDKs
+  if (!globals->options->GetEmbeddedJavabase().empty()) {
+    // quiet warnings from com.google.protobuf.UnsafeUtil,
+    // see: https://github.com/google/protobuf/issues/3781
+    result.push_back("--add-opens=java.base/java.nio=ALL-UNNAMED");
+  }
 
   result.push_back("-Xverify:none");
 
@@ -442,7 +452,7 @@ static vector<string> GetArgumentArray(
   bool first = true;
   for (const auto &it : globals->extracted_binaries) {
     if (IsSharedLibrary(it)) {
-      string libpath(blaze::PathAsJvmFlag(
+      string libpath(blaze_util::PathAsJvmFlag(
           blaze_util::JoinPath(real_install_dir, blaze_util::Dirname(it))));
       // Only add the library path if it's not added yet.
       if (java_library_paths.find(libpath) == java_library_paths.end()) {
@@ -497,14 +507,14 @@ static vector<string> GetArgumentArray(
                    ToString(globals->options->connect_timeout_secs));
 
   result.push_back("--output_user_root=" +
-                   blaze::ConvertPath(globals->options->output_user_root));
+                   blaze_util::ConvertPath(globals->options->output_user_root));
   result.push_back("--install_base=" +
-                   blaze::ConvertPath(globals->options->install_base));
+                   blaze_util::ConvertPath(globals->options->install_base));
   result.push_back("--install_md5=" + globals->install_md5);
   result.push_back("--output_base=" +
-                   blaze::ConvertPath(globals->options->output_base));
+                   blaze_util::ConvertPath(globals->options->output_base));
   result.push_back("--workspace_directory=" +
-                   blaze::ConvertPath(globals->workspace));
+                   blaze_util::ConvertPath(globals->workspace));
   result.push_back("--default_system_javabase=" + GetSystemJavabase());
 
   if (!globals->options->server_jvm_out.empty()) {
@@ -1170,8 +1180,8 @@ static void EnsureCorrectRunningVersion(BlazeServer *server) {
   string prev_installation;
   bool ok =
       blaze_util::ReadDirectorySymlink(installation_path, &prev_installation);
-  if (!ok || !CompareAbsolutePaths(prev_installation,
-                                   globals->options->install_base)) {
+  if (!ok || !blaze_util::CompareAbsolutePaths(
+                 prev_installation, globals->options->install_base)) {
     if (server->Connected()) {
       BAZEL_LOG(INFO)
           << "Killing running server because it is using another version of "

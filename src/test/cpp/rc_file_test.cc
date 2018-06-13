@@ -21,6 +21,7 @@
 #include "src/main/cpp/rc_file.h"
 #include "src/main/cpp/util/file.h"
 #include "src/main/cpp/util/file_platform.h"
+#include "src/main/cpp/util/path.h"
 #include "src/main/cpp/workspace_layout.h"
 #include "googlemock/include/gmock/gmock.h"
 #include "googletest/include/gtest/gtest.h"
@@ -29,7 +30,7 @@ namespace blaze {
 using ::testing::HasSubstr;
 using ::testing::MatchesRegex;
 
-#if defined(COMPILER_MSVC) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(__CYGWIN__)
 constexpr const char* kNullDevice = "nul";
 #else  // Assume POSIX if not Windows.
 constexpr const char* kNullDevice = "/dev/null";
