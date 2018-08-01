@@ -1798,7 +1798,6 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
   public void testObjcNamespacedImports() throws Exception {
     useConfiguration(
         "--crosstool_top=" + MockObjcSupport.DEFAULT_OSX_CROSSTOOL,
-        "--experimental_objc_crosstool=all",
         "--experimental_enable_implicit_headermaps=true");
     scratch.file(
         "x/importer.m",
