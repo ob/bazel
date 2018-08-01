@@ -13,14 +13,13 @@
 // limitations under the License.
 package com.google.devtools.build.lib.buildtool;
 
-import com.google.devtools.build.lib.analysis.BuildView.AnalysisResult;
+import com.google.devtools.build.lib.analysis.AnalysisResult;
 import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
 import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationCollection;
 import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.query2.ConfiguredTargetQueryEnvironment;
-import com.google.devtools.build.lib.query2.CqueryThreadsafeCallback;
+import com.google.devtools.build.lib.query2.NamedThreadSafeOutputFormatterCallback;
+import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment;
 import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
 import com.google.devtools.build.lib.query2.engine.QueryException;
 import com.google.devtools.build.lib.query2.engine.QueryExpression;
@@ -36,7 +35,7 @@ import java.util.stream.Collectors;
  * Version of {@link BuildTool} that handles all work for queries based on results from the analysis
  * phase.
  */
-public abstract class PostAnalysisQueryBuildTool extends BuildTool {
+public abstract class PostAnalysisQueryBuildTool<T> extends BuildTool {
 
   private final QueryExpression queryExpression;
 
@@ -48,8 +47,7 @@ public abstract class PostAnalysisQueryBuildTool extends BuildTool {
   @Override
   protected void postProcessAnalysisResult(
       BuildRequest request,
-      AnalysisResult analysisResult,
-      BuildConfigurationCollection configurations)
+      AnalysisResult analysisResult)
       throws InterruptedException, ViewCreationFailedException,
           PostAnalysisQueryCommandLineException {
     // TODO: b/71905538 - this query will operate over the graph as constructed by analysis, but
@@ -66,7 +64,7 @@ public abstract class PostAnalysisQueryBuildTool extends BuildTool {
       try {
         doPostAnalysisQuery(
             request,
-            configurations.getHostConfiguration(),
+            analysisResult.getConfigurationCollection().getHostConfiguration(),
             analysisResult.getTopLevelTargetsWithConfigs(),
             queryExpression);
       } catch (QueryException | IOException e) {
@@ -78,8 +76,7 @@ public abstract class PostAnalysisQueryBuildTool extends BuildTool {
     }
   }
 
-  // TODO(twerth): Make this more generic when introducting a PostAnalysisQueryEnvironment.
-  protected abstract ConfiguredTargetQueryEnvironment getQueryEnvironment(
+  protected abstract PostAnalysisQueryEnvironment<T> getQueryEnvironment(
       BuildRequest request,
       BuildConfiguration hostConfiguration,
       BuildConfiguration targetConfig,
@@ -127,30 +124,30 @@ public abstract class PostAnalysisQueryBuildTool extends BuildTool {
     WalkableGraph walkableGraph =
         SkyframeExecutorWrappingWalkableGraph.of(env.getSkyframeExecutor());
 
-    ConfiguredTargetQueryEnvironment configuredTargetQueryEnvironment =
+    PostAnalysisQueryEnvironment<T> postAnalysisQueryEnvironment =
         getQueryEnvironment(request, hostConfiguration, targetConfig, walkableGraph);
-    Iterable<CqueryThreadsafeCallback> callbacks =
-        configuredTargetQueryEnvironment.getDefaultOutputFormatters(
-            configuredTargetQueryEnvironment.getAccessor(),
+    Iterable<NamedThreadSafeOutputFormatterCallback<T>> callbacks =
+        postAnalysisQueryEnvironment.getDefaultOutputFormatters(
+            postAnalysisQueryEnvironment.getAccessor(),
             env.getReporter(),
             env.getSkyframeExecutor(),
             hostConfiguration,
             runtime.getRuleClassProvider().getTrimmingTransitionFactory(),
             env.getPackageManager());
-    String outputFormat = configuredTargetQueryEnvironment.getOutputFormat();
-    CqueryThreadsafeCallback callback =
-        CqueryThreadsafeCallback.getCallback(outputFormat, callbacks);
+    String outputFormat = postAnalysisQueryEnvironment.getOutputFormat();
+    NamedThreadSafeOutputFormatterCallback<T> callback =
+        NamedThreadSafeOutputFormatterCallback.selectCallback(outputFormat, callbacks);
     if (callback == null) {
       env.getReporter()
           .handle(
               Event.error(
                   String.format(
                       "Invalid output format '%s'. Valid values are: %s",
-                      outputFormat, CqueryThreadsafeCallback.callbackNames(callbacks))));
+                      outputFormat,
+                      NamedThreadSafeOutputFormatterCallback.callbackNames(callbacks))));
       return;
     }
-    QueryEvalResult result =
-        configuredTargetQueryEnvironment.evaluateQuery(queryExpression, callback);
+    QueryEvalResult result = postAnalysisQueryEnvironment.evaluateQuery(queryExpression, callback);
     if (result.isEmpty()) {
       env.getReporter().handle(Event.info("Empty query results"));
     }

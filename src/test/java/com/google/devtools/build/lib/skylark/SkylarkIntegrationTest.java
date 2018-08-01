@@ -576,7 +576,7 @@ public class SkylarkIntegrationTest extends BuildViewTestCase {
   }
 
   @Test
-  public void testCannotSpecifyRunfilesWithDataOrDefaultRunfiles() throws Exception {
+  public void testCannotSpecifyRunfilesWithDataOrDefaultRunfiles_struct() throws Exception {
     scratch.file(
         "test/skylark/extension.bzl",
         "def custom_rule_impl(ctx):",
@@ -593,6 +593,54 @@ public class SkylarkIntegrationTest extends BuildViewTestCase {
         "load('//test/skylark:extension.bzl', 'custom_rule')",
         "",
         "custom_rule(name = 'cr')");
+  }
+
+  @Test
+  public void testCannotSpecifyRunfilesWithDataOrDefaultRunfiles_defaultInfo() throws Exception {
+    scratch.file(
+        "test/skylark/extension.bzl",
+        "def custom_rule_impl(ctx):",
+        "  rf = ctx.runfiles()",
+        "  return struct(DefaultInfo(runfiles = rf, default_runfiles = rf))",
+        "",
+        "custom_rule = rule(implementation = custom_rule_impl)");
+
+    checkError(
+        "test/skylark",
+        "cr",
+        "Cannot specify the provider 'runfiles' together with "
+            + "'data_runfiles' or 'default_runfiles'",
+        "load('//test/skylark:extension.bzl', 'custom_rule')",
+        "",
+        "custom_rule(name = 'cr')");
+  }
+
+  @Test
+  public void testDefaultInfoWithRunfilesConstructor() throws Exception {
+    scratch.file(
+        "pkg/BUILD",
+        "sh_binary(name = 'tryme',",
+        "          srcs = [':tryme.sh'],",
+        "          visibility = ['//visibility:public'],",
+        ")");
+
+    scratch.file(
+        "src/rulez.bzl",
+        "def  _impl(ctx):",
+        "   info = DefaultInfo(runfiles = ctx.runfiles(files=[ctx.executable.dep]))",
+        "   if info.default_runfiles.files.to_list()[0] != ctx.executable.dep:",
+        "       fail('expected runfile to be in info.default_runfiles')",
+        "   return [info]",
+        "r = rule(_impl,",
+        "         attrs = {",
+        "            'dep' : attr.label(executable = True, mandatory = True, cfg = 'host'),",
+        "         }",
+        ")");
+
+    scratch.file(
+        "src/BUILD", "load(':rulez.bzl', 'r')", "r(name = 'r_tools', dep = '//pkg:tryme')");
+
+    assertThat(getConfiguredTarget("//src:r_tools")).isNotNull();
   }
 
   @Test
@@ -1591,7 +1639,8 @@ public class SkylarkIntegrationTest extends BuildViewTestCase {
         "my_dep_rule(name = 'yyy', dep = ':xxx')"
     );
 
-    SkylarkKey pInfoKey = new SkylarkKey(Label.parseAbsolute("//test:rule.bzl"), "PInfo");
+    SkylarkKey pInfoKey =
+        new SkylarkKey(Label.parseAbsolute("//test:rule.bzl", ImmutableMap.of()), "PInfo");
 
     ConfiguredTarget targetXXX = getConfiguredTarget("//test:xxx");
     assertThat(targetXXX.get(pInfoKey).getValue("s"))
@@ -1680,6 +1729,39 @@ public class SkylarkIntegrationTest extends BuildViewTestCase {
     assertContainsEvent("ERROR /workspace/BUILD:3:1: in extrule rule //:test:");
     assertContainsEvent("he following directories were also declared as files:");
     assertContainsEvent("foo/bar/baz");
+  }
+
+  @Test
+  public void testEnvironmentConstraintsFromSkylarkRule() throws Exception {
+    scratch.file(
+        "buildenv/foo/BUILD",
+        "environment_group(name = 'env_group',",
+        "    defaults = [':default'],",
+        "    environments = ['default', 'other'])",
+        "environment(name = 'default')",
+        "environment(name = 'other')");
+    // The example skylark rule explicitly provides the MyProvider provider as a regression test
+    // for a bug where a skylark rule with unsatisfied constraints but explicit providers would
+    // result in Bazel throwing a null pointer exception.
+    scratch.file(
+        "test/skylark/extension.bzl",
+        "MyProvider = provider()",
+        "",
+        "def _impl(ctx):",
+        "  return struct(providers = [MyProvider(foo = 'bar')])",
+        "my_rule = rule(implementation = _impl,",
+        "    attrs = { 'deps' : attr.label_list() },",
+        "    provides = [MyProvider])");
+    scratch.file(
+        "test/skylark/BUILD",
+        "load('//test/skylark:extension.bzl',  'my_rule')",
+        "java_library(name = 'dep', srcs = ['a.java'], restricted_to = ['//buildenv/foo:other'])",
+        "my_rule(name='my', deps = [':dep'])");
+
+    reporter.removeHandler(failFastHandler);
+    assertThat(getConfiguredTarget("//test/skylark:my")).isNull();
+    assertContainsEvent(
+        "//test/skylark:dep doesn't support expected environment: //buildenv/foo:default");
   }
 
   /**

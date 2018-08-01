@@ -25,7 +25,7 @@ import com.google.devtools.build.lib.analysis.RunfilesProvider;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.rules.cpp.LinkerInput;
-import com.google.devtools.build.lib.rules.java.JavaCompilationArgs.ClasspathType;
+import com.google.devtools.build.lib.rules.java.JavaCompilationArgsProvider.ClasspathType;
 import com.google.devtools.build.lib.rules.java.proto.GeneratedExtensionRegistryProvider;
 
 /**
@@ -139,7 +139,7 @@ public class JavaLibrary implements RuleConfiguredTargetFactory {
     }
     JavaRuleOutputJarsProvider.Builder ruleOutputJarsProviderBuilder =
         JavaRuleOutputJarsProvider.builder()
-            .addOutputJar(classJar, iJar, ImmutableList.of(srcJar))
+            .addOutputJar(classJar, iJar, manifestProtoOutput, ImmutableList.of(srcJar))
             .setJdeps(outputDepsProto)
             .setNativeHeaders(nativeHeaderOutput);
 
@@ -162,12 +162,8 @@ public class JavaLibrary implements RuleConfiguredTargetFactory {
         new ClasspathConfiguredFragment(
             javaArtifacts, attributes, neverLink, helper.getBootclasspathOrDefault()));
 
-    JavaCompilationArgs javaCompilationArgs =
-        common.collectJavaCompilationArgs(false, neverLink, false);
-    JavaCompilationArgs recursiveJavaCompilationArgs =
-        common.collectJavaCompilationArgs(true, neverLink, false);
-    NestedSet<Artifact> compileTimeJavaDepArtifacts = common.collectCompileTimeDependencyArtifacts(
-        javaArtifacts.getCompileTimeDependencyArtifact());
+    JavaCompilationArgsProvider javaCompilationArgs =
+        common.collectJavaCompilationArgs(neverLink, false);
     NestedSet<LinkerInput> transitiveJavaNativeLibraries =
         common.collectTransitiveJavaNativeLibraries();
 
@@ -179,9 +175,7 @@ public class JavaLibrary implements RuleConfiguredTargetFactory {
       builder.add(GeneratedExtensionRegistryProvider.class, generatedExtensionRegistryProvider);
     }
 
-    JavaCompilationArgsProvider compilationArgsProvider =
-        JavaCompilationArgsProvider.create(
-            javaCompilationArgs, recursiveJavaCompilationArgs, compileTimeJavaDepArtifacts);
+    JavaCompilationArgsProvider compilationArgsProvider = javaCompilationArgs;
     JavaSourceJarsProvider sourceJarsProvider = sourceJarsProviderBuilder.build();
     JavaRuleOutputJarsProvider ruleOutputJarsProvider = ruleOutputJarsProviderBuilder.build();
 
@@ -190,7 +184,7 @@ public class JavaLibrary implements RuleConfiguredTargetFactory {
     JavaInfo.Builder javaInfoBuilder = JavaInfo.Builder.create();
 
     common.addTransitiveInfoProviders(builder, javaInfoBuilder, filesToBuild, classJar);
-    common.addGenJarsProvider(builder, javaInfoBuilder, genClassJar, genSourceJar);
+    common.addGenJarsProvider(javaInfoBuilder, genClassJar, genSourceJar);
 
     NestedSet<Artifact> proguardSpecs = new ProguardLibrary(ruleContext).collectProguardSpecs();
 
@@ -221,11 +215,10 @@ public class JavaLibrary implements RuleConfiguredTargetFactory {
         .setFilesToBuild(filesToBuild)
         .addProvider(new JavaNativeLibraryProvider(transitiveJavaNativeLibraries))
         .addProvider(JavaSourceInfoProvider.fromJavaTargetAttributes(attributes, semantics))
-        .addProvider(new ProguardSpecProvider(proguardSpecs))
+        .addNativeDeclaredProvider(new ProguardSpecProvider(proguardSpecs))
         .addNativeDeclaredProvider(javaInfo)
         .addOutputGroup(JavaSemantics.SOURCE_JARS_OUTPUT_GROUP, transitiveSourceJars)
         .addOutputGroup(OutputGroupInfo.HIDDEN_TOP_LEVEL, proguardSpecs);
-
 
     if (ruleContext.hasErrors()) {
       return null;

@@ -128,6 +128,7 @@ public abstract class PyBinary implements RuleConfiguredTargetFactory {
         .setFilesToBuild(common.getFilesToBuild())
         .add(RunfilesProvider.class, runfilesProvider)
         .setRunfilesSupport(runfilesSupport, realExecutable)
+        .addNativeDeclaredProvider(ccLinkingInfo)
         .add(PythonImportsProvider.class, new PythonImportsProvider(imports));
   }
 

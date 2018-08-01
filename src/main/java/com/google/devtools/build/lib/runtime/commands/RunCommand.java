@@ -100,9 +100,7 @@ import javax.annotation.Nullable;
          help = "resource:run.txt",
          allowResidue = true,
          hasSensitiveResidue = true,
-         binaryStdOut = true,
-         completion = "label-bin",
-         binaryStdErr = true)
+         completion = "label-bin")
 public class RunCommand implements BlazeCommand  {
   /** Options for the "run" command. */
   public static class RunOptions extends OptionsBase {
@@ -421,7 +419,10 @@ public class RunCommand implements BlazeCommand  {
     if (runOptions.scriptPath != null) {
       String unisolatedCommand = CommandFailureUtils.describeCommand(
           CommandDescriptionForm.COMPLETE_UNISOLATED,
-          cmdLine, runEnvironment, workingDir.getPathString());
+          /* prettyPrintArgs= */ false,
+          cmdLine,
+          runEnvironment,
+          workingDir.getPathString());
       if (writeScript(env, shExecutable, runOptions.scriptPath, unisolatedCommand)) {
         return BlazeCommandResult.exitCode(ExitCode.SUCCESS);
       } else {
