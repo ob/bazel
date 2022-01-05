@@ -278,6 +278,8 @@ public final class SandboxModule extends BlazeModule {
     boolean processWrapperSupported = ProcessWrapperSandboxedSpawnRunner.isSupported(cmdEnv);
     boolean linuxSandboxSupported = LinuxSandboxedSpawnRunner.isSupported(cmdEnv);
     boolean darwinSandboxSupported = DarwinSandboxedSpawnRunner.isSupported(cmdEnv);
+    boolean darwinFakeSandboxSupported = DarwinFakeSandboxedSpawnRunner.isSupported(cmdEnv);
+    boolean darwinCopySandboxSupported = DarwinCopySandboxedSpawnRunner.isSupported(cmdEnv);
 
     boolean verboseFailures =
         checkNotNull(cmdEnv.getOptions().getOptions(ExecutionOptions.class)).verboseFailures;
@@ -372,6 +374,42 @@ public final class SandboxModule extends BlazeModule {
           new DarwinSandboxedStrategy(cmdEnv.getExecRoot(), spawnRunner, verboseFailures),
           "sandboxed",
           "darwin-sandbox");
+    }
+
+    if (darwinFakeSandboxSupported) {
+      SpawnRunner spawnRunner =
+          withFallback(
+              cmdEnv,
+              new DarwinFakeSandboxedSpawnRunner(
+                  helpers,
+                  cmdEnv,
+                  sandboxBase,
+                  sandboxfsProcess,
+                  options.sandboxfsMapSymlinkTargets,
+                  treeDeleter));
+      spawnRunners.add(spawnRunner);
+      builder.registerStrategy(
+          new DarwinFakeSandboxedStrategy(cmdEnv.getExecRoot(), spawnRunner, verboseFailures),
+          "sandboxed",
+          "darwin-fake-sandbox");
+    }
+
+    if (darwinCopySandboxSupported) {
+      SpawnRunner spawnRunner =
+          withFallback(
+              cmdEnv,
+              new DarwinCopySandboxedSpawnRunner(
+                  helpers,
+                  cmdEnv,
+                  sandboxBase,
+                  sandboxfsProcess,
+                  options.sandboxfsMapSymlinkTargets,
+                  treeDeleter));
+      spawnRunners.add(spawnRunner);
+      builder.registerStrategy(
+          new DarwinCopySandboxedStrategy(cmdEnv.getExecRoot(), spawnRunner, verboseFailures),
+          "sandboxed",
+          "darwin-copy-sandbox");
     }
 
     if (windowsSandboxSupported) {
